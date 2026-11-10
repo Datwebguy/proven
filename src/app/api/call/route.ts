@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     !(ASSETS as readonly string[]).includes(asset) && "Pick an asset.",
     !(usd > 0) && "Enter a target price.",
     !(confidence >= 1 && confidence <= 99) && "Confidence must be between 1 and 99.",
-    !(hours >= 0.25 && hours <= 720) && "Deadline must be between 15 minutes and 30 days.",
+    !(hours >= 5 / 60 - 1e-9 && hours <= 720) && "Deadline must be between 5 minutes and 30 days.",
     !source && "Enter a name.",
     strategyByName(source) && "That name belongs to a built-in strategy.",
     rawLink && !link && "The link must start with http:// or https://.",
