@@ -103,3 +103,18 @@ describe("proven score", () => {
     expect(provenScore({ resolved: 1, brier: 0 })).toBeLessThan(provenScore({ resolved: 30, brier: 0 }));
   });
 });
+
+import { parseCall, isPostUrl } from "../src/lib/xpost";
+describe("post import", () => {
+  it("reads asset, direction, price and stated confidence from a post", () => {
+    expect(parseCall("$SUI to $1.20 by Friday, 80% sure")).toEqual({ asset: "SUI", direction: "above", usd: 1.2, confidence: 80 });
+    expect(parseCall("Bitcoin dumps below 70k this week")).toMatchObject({ asset: "BTC", direction: "below", usd: 70000 });
+    expect(parseCall("ETH breaking $2,500 soon")).toMatchObject({ asset: "ETH", direction: "above", usd: 2500 });
+    expect(parseCall("gm everyone")).toMatchObject({ asset: null, usd: null });
+  });
+  it("accepts x.com and twitter.com post links only", () => {
+    expect(isPostUrl("https://x.com/someone/status/1855000123")).toBe(true);
+    expect(isPostUrl("https://twitter.com/someone/status/1855123")).toBe(true);
+    expect(isPostUrl("https://example.com/post/1")).toBe(false);
+  });
+});
