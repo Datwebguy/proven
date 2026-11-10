@@ -52,7 +52,58 @@ function useReveal() {
   });
 }
 
-const Kind = ({ origin }: { origin: string }) => <span className={"badge " + (origin === "person" ? "brand" : "")}>{origin === "person" ? "Person" : "Strategy"}</span>;
+/**
+ * Follow sources without an account. The list lives in this browser. While Proven is open it checks
+ * memory every minute and sends a browser notification when someone you follow makes a call or gets a result.
+ */
+function useFollowing(j: Journal | null) {
+  const [following, setFollowing] = useState<string[]>([]);
+  const seen = useRef<Map<string, string> | null>(null);
+
+  useEffect(() => {
+    try { setFollowing(JSON.parse(localStorage.getItem("proven.following") ?? "[]")); } catch { /* private mode */ }
+  }, []);
+
+  const toggle = useCallback((s: string) => {
+    setFollowing((cur) => {
+      const next = cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s];
+      try { localStorage.setItem("proven.following", JSON.stringify(next)); } catch { /* ignore */ }
+      if (!cur.includes(s) && typeof Notification !== "undefined" && Notification.permission === "default") Notification.requestPermission();
+      return next;
+    });
+  }, []);
+
+  const snapshot = (calls: Journal["calls"], who: string[]) =>
+    new Map(calls.filter((c) => who.includes(c.source)).map((c) => [c.id, c.outcome ? "done" : "open"]));
+
+  useEffect(() => {
+    if (j && !seen.current) seen.current = snapshot(j.calls, following);
+  }, [j, following]);
+
+  useEffect(() => {
+    if (!following.length) return;
+    const t = setInterval(async () => {
+      try {
+        const d: Journal = await (await fetch("/api/state?asset=SUI", { cache: "no-store" })).json();
+        const now = snapshot(d.calls, following);
+        const prev = seen.current ?? new Map();
+        for (const c of d.calls) {
+          if (!following.includes(c.source)) continue;
+          const was = prev.get(c.id), is = now.get(c.id);
+          const msg = !was ? `${c.source} made a call: ${c.claim}, ${c.confidence}% sure.`
+            : was === "open" && is === "done" ? `${c.source}'s call on ${c.claim} came out ${c.outcome!.result === c.confidence >= 50 ? "right" : "wrong"}.` : null;
+          if (msg && typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Proven", { body: msg, icon: "/icon.svg" });
+        }
+        seen.current = now;
+      } catch { /* try again next minute */ }
+    }, 60_000);
+    return () => clearInterval(t);
+  }, [following]);
+
+  return { following, toggle };
+}
+
+const Kind =({ origin }: { origin: string }) => <span className={"badge " + (origin === "person" ? "brand" : "")}>{origin === "person" ? "Person" : "Strategy"}</span>;
 
 export default function Home() {
   const [asset, setAsset] = useState("SUI");
@@ -66,6 +117,30 @@ export default function Home() {
   const [whose, setWhose] = useState<"me" | "follow">("me");
   const [name, setName] = useState("");
   const [profile, setProfile] = useState<string | null>(null);
+  const [fAsset, setFAsset] = useState("SUI");
+  const [fDir, setFDir] = useState("above");
+  const [fUsd, setFUsd] = useState("");
+  const [link, setLink] = useState("");
+  const [postUrl, setPostUrl] = useState("");
+  const [postText, setPostText] = useState("");
+  const { following, toggle: toggleFollow } = useFollowing(j);
+
+  async function importPost() {
+    setBusy("import");
+    const r = await fetch(`/api/xpost?url=${encodeURIComponent(postUrl)}`);
+    const d = await r.json();
+    setBusy("");
+    if (!r.ok) return setToast({ tone: "bad", body: d.error });
+    setName(d.handle);
+    setLink(d.url);
+    setPostText(d.text);
+    if (d.draft.asset) setFAsset(d.draft.asset);
+    if (d.draft.direction) setFDir(d.draft.direction);
+    if (d.draft.usd) setFUsd(String(d.draft.usd));
+    if (d.draft.confidence) setConf(d.draft.confidence);
+    const missing = [!d.draft.asset && "asset", !d.draft.usd && "price"].filter(Boolean);
+    setToast({ tone: missing.length ? "info" : "good", body: missing.length ? `Filled what the post says. Please set the ${missing.join(" and ")} yourself, then save.` : "Filled from the post. Check the details and the confidence, then save." });
+  }
   const [, tick] = useState(0);
   useReveal();
 
@@ -274,10 +349,20 @@ export default function Home() {
                   <input id="f-src" name="source" required maxLength={40} placeholder={whose === "me" ? "e.g. Ada" : "e.g. @analyst"} value={name} onChange={(e) => setName(e.target.value)} list="known-sources" autoComplete="off" />
                   <datalist id="known-sources">{(j?.sources ?? []).filter((s) => s.origin === "person").map((s) => <option key={s.source} value={s.source} />)}</datalist>
                 </div>
-                {whose === "follow" && <div className="field w2"><label htmlFor="f-link">Where they said it (optional)</label><input id="f-link" name="link" type="url" placeholder="https://…" /></div>}
-                <div className="field"><label htmlFor="f-asset">Asset</label><select id="f-asset" name="asset" defaultValue={asset}>{ASSETS.map((a) => <option key={a}>{a}</option>)}</select></div>
-                <div className="field"><label htmlFor="f-dir">Will be</label><select id="f-dir" name="direction"><option value="above">Above</option><option value="below">Below</option></select></div>
-                <div className="field w2"><label htmlFor="f-usd">Price in USD</label><input id="f-usd" name="usd" type="number" step="any" min="0" required inputMode="decimal" placeholder="Target price" /></div>
+                {whose === "follow" && <div className="field w2"><label htmlFor="f-link">Where they said it (optional)</label><input id="f-link" name="link" type="url" placeholder="https://…" value={link} onChange={(e) => setLink(e.target.value)} /></div>}
+                {whose === "follow" && (
+                  <div className="field w4">
+                    <label htmlFor="f-post">Or paste a post from X</label>
+                    <div className="importrow">
+                      <input id="f-post" type="url" placeholder="https://x.com/name/status/…" value={postUrl} onChange={(e) => setPostUrl(e.target.value)} />
+                      <button type="button" className="btn ghost" onClick={importPost} disabled={!postUrl || busy === "import"}>{busy === "import" ? <><span className="spin" />Reading…</> : "Fill from post"}</button>
+                    </div>
+                    {postText && <div className="quote">“{postText}”</div>}
+                  </div>
+                )}
+                <div className="field"><label htmlFor="f-asset">Asset</label><select id="f-asset" name="asset" value={fAsset} onChange={(e) => setFAsset(e.target.value)}>{ASSETS.map((a) => <option key={a}>{a}</option>)}</select></div>
+                <div className="field"><label htmlFor="f-dir">Will be</label><select id="f-dir" name="direction" value={fDir} onChange={(e) => setFDir(e.target.value)}><option value="above">Above</option><option value="below">Below</option></select></div>
+                <div className="field w2"><label htmlFor="f-usd">Price in USD</label><input id="f-usd" name="usd" type="number" step="any" min="0" required inputMode="decimal" placeholder="Target price" value={fUsd} onChange={(e) => setFUsd(e.target.value)} /></div>
                 <div className="field w2"><label htmlFor="f-h">Deadline</label>
                   <select id="f-h" name="hours" defaultValue="0.25"><option value="0.25">In 15 minutes</option><option value="1">In 1 hour</option><option value="4">In 4 hours</option><option value="24">In 1 day</option><option value="168">In 1 week</option></select>
                 </div>
@@ -316,7 +401,7 @@ export default function Home() {
               const v = s.resolved < 3 ? ["", "New"] : gap > 0.08 ? ["bad", "Overconfident"] : gap < -0.08 ? ["warn", "Too modest"] : ["good", "Calibrated"];
               return (
                 <div className="lb" key={s.source}>
-                  <span className="pos">{i + 1}</span>
+                  <span className="pos">{following.includes(s.source) ? <span title="Following" style={{ color: "var(--brand)" }}>★</span> : i + 1}</span>
                   <div><div className="nm"><button className="linkbtn" onClick={() => setProfile(s.source)}>{s.source}</button> <Kind origin={s.origin} /> <span className={"badge " + v[0]}>{v[1]}</span></div>{s.rule && <div className="rule">{s.rule}</div>}</div>
                   <div className="facts">{s.resolved ? <>Right {pct(s.hitRate)} of the time<br />Claims {pct(s.avgConfidence)} on average</> : "No results yet"}</div>
                   <div className="trust"><b className="tnum">{s.score}</b><span>score · trust {pct(s.weight)}</span></div>
@@ -382,7 +467,7 @@ export default function Home() {
           </p>
         </section>
 
-        {profile && j && <Profile source={profile} j={j} onClose={() => setProfile(null)} />}
+        {profile && j && <Profile source={profile} j={j} onClose={() => setProfile(null)} isFollowing={following.includes(profile)} onFollow={toggleFollow} />}
 
         <footer>
           <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><Logo size={18} /> Proven</span>
@@ -412,7 +497,7 @@ function Advice({ name, conf, whose, j }: { name: string; conf: number; whose: "
 }
 
 /** A source's record: accuracy vs claimed confidence, a reliability table, and every call with its receipt. */
-function Profile({ source, j, onClose }: { source: string; j: Journal; onClose: () => void }) {
+function Profile({ source, j, onClose, isFollowing, onFollow }: { source: string; j: Journal; onClose: () => void; isFollowing: boolean; onFollow: (s: string) => void }) {
   const st = j.sources.find((s) => s.source === source);
   const calls = j.calls.filter((c) => c.source === source);
   const done = calls.filter((c) => c.outcome);
@@ -429,11 +514,16 @@ function Profile({ source, j, onClose }: { source: string; j: Journal; onClose: 
         <div className="drawer-head">
           <div><div className="muted">Record</div><h3>{source}</h3></div>
           <div style={{ display: "flex", gap: 8 }}>
-            <a className="btn sm" href={`/s/${encodeURIComponent(source)}`} target="_blank" rel="noreferrer">Share record</a>
+            <button className={"btn sm " + (isFollowing ? "ghost" : "")} onClick={() => onFollow(source)}>{isFollowing ? "Following" : "Follow"}</button>
+            <a className="btn ghost sm" href={`/s/${encodeURIComponent(source)}`} target="_blank" rel="noreferrer">Share</a>
             <button className="btn ghost sm" onClick={onClose} aria-label="Close">Close</button>
           </div>
         </div>
         {st?.rule && <p className="muted" style={{ marginTop: 0 }}>{st.rule}</p>}
+        <p className="muted" style={{ marginTop: 0 }}>
+          {isFollowing ? "You'll get a browser alert while Proven is open." : "Follow to get a browser alert when they make a call or get a result."}{" "}
+          Prefer alerts elsewhere? <a href={`/s/${encodeURIComponent(source)}/feed.xml`} target="_blank" rel="noreferrer">RSS feed</a> works in Slack, Discord, Telegram and feed readers. No account needed.
+        </p>
         <div className="stats" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
           <div className="stat"><b className="tnum">{st ? st.score : "—"}</b><span>{st ? st.label : "score"} · #{rank}</span></div>
           <div className="stat"><b className="tnum">{st?.resolved ? pct(st.hitRate) : "—"}</b><span>right</span></div>
