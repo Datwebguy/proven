@@ -41,24 +41,39 @@ export async function writeMany(rs: ProvenRecord[], onChunk?: (done: number, tot
  * Rebuild the full journal from Walrus. listMemories gives the exact count + blob ids;
  * recall (several broad queries, newest-first) returns the decrypted text. No local cache.
  */
-export async function loadAll(): Promise<{ records: Recalled[]; onchainCount: number }> {
+export async function loadAll(): Promise<{ records: Recalled[]; onchainCount: number; recalledTotal: number }> {
   const m = mem();
   let count = 0, cursor: string | undefined, more = true;
   while (more) {
     const page = await m.listMemories({ cursor, namespace: NAMESPACE });
-    count += page.memories.length;
+    count += page.memories.filter((x) => x.namespace_id === NAMESPACE).length;
     cursor = page.next_cursor ?? undefined;
     more = page.has_more;
   }
+  const seenAll = new Set<string>();
   const seen = new Map<string, Recalled>();
-  for (const query of ["PROVEN/1 CALL", "PROVEN/1 OUTCOME", "PROVEN/1 CALIBRATION"]) {
-    for (const sort of ["recent", "relevance"] as const) {
-      const { results } = await m.recall({ query, limit: 100, namespace: NAMESPACE, sort });
-      for (const r of results) {
-        const record = decode(r.text);
-        if (record && !seen.has(r.blob_id)) seen.set(r.blob_id, { blobId: r.blob_id, createdAt: r.created_at, record });
+  const pull = async (query: string, sort?: "recent") => {
+    const { results } = await m.recall({ query, limit: 100, namespace: NAMESPACE, ...(sort ? { sort } : {}), timeoutMs: 90_000 });
+    for (const r of results) {
+      seenAll.add(r.blob_id);
+      const record = decode(r.text);
+      if (record && !seen.has(r.blob_id)) seen.set(r.blob_id, { blobId: r.blob_id, createdAt: r.created_at, record });
+    }
+    return results.length;
+  };
+  // One recall returns up to 100 decrypted memories. If that cap is hit, the journal is bigger than one
+  // question can return, so widen with per-kind queries. If it came back short (a blob can be skipped
+  // transiently), retry once with a different ordering.
+  const first = await pull("PROVEN/1", "recent");
+  if (seenAll.size < count) {
+    if (first >= 100) {
+      for (const q of ["PROVEN/1 CALL", "PROVEN/1 OUTCOME", "PROVEN/1 CALIBRATION"]) {
+        if (seenAll.size >= count) break;
+        await pull(q);
       }
+    } else {
+      await pull("PROVEN/1");
     }
   }
-  return { records: [...seen.values()], onchainCount: count };
+  return { records: [...seen.values()], onchainCount: count, recalledTotal: seenAll.size };
 }
