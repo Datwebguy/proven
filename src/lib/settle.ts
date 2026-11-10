@@ -8,14 +8,16 @@ import type { CallRecord, ProvenRecord } from "./types";
  * then write the outcomes and fresh trust snapshots back to memory. Safe to run repeatedly:
  * calls that already have an outcome in memory are skipped.
  */
-export async function settleDue(limitGroups = 8) {
+export async function settleDue(limitGroups = 8, priorityCallId?: string) {
   const { records } = await loadAll({ fresh: true });
   const before = join(records.map((r) => r.record));
   const due = before.filter((j) => !j.outcome && isDue(j.call));
 
   const groups = new Map<string, CallRecord[]>();
   for (const { call } of due) groups.set(claimKey(call), [...(groups.get(claimKey(call)) ?? []), call]);
-  const batch = [...groups.values()].slice(0, limitGroups);
+  // A caller waiting on one call gets it settled first.
+  const ordered = [...groups.values()].sort((a, b) => Number(b.some((c) => c.id === priorityCallId)) - Number(a.some((c) => c.id === priorityCallId)));
+  const batch = ordered.slice(0, limitGroups);
   if (!batch.length) return { settled: 0, outcomes: [], receipts: [], beforeStats: sourceStats(before), afterStats: sourceStats(before) };
 
   const outcomes = [];

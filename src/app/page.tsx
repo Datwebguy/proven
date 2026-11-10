@@ -142,6 +142,8 @@ export default function Home() {
     setToast({ tone: missing.length ? "info" : "good", body: missing.length ? `Filled what the post says. Please set the ${missing.join(" and ")} yourself, then save.` : "Filled from the post. Check the details and the confidence, then save." });
   }
   const [, tick] = useState(0);
+  const [mine, setMine] = useState<{ id: string; deadline: string; source: string } | null>(null);
+  const autoFired = useRef<string | null>(null);
   useReveal();
 
   // One request returns every asset's answer, so switching assets is instant.
@@ -158,7 +160,16 @@ export default function Home() {
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/health").then((r) => r.json()).then(setHealth).catch(() => setHealth({})); }, []);
-  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30_000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), mine ? 1000 : 30_000); return () => clearInterval(t); }, [mine]);
+  // When my call's deadline minute is final, settle it automatically (once).
+  useEffect(() => {
+    if (!mine || busy || autoFired.current === mine.id) return;
+    if (Date.parse(mine.deadline) + 62_000 > Date.now()) return;
+    const settledAlready = j?.calls.find((c) => c.id === mine.id)?.outcome;
+    autoFired.current = mine.id;
+    if (settledAlready) { setMine(null); return; }
+    settle(mine.id).then(() => setMine(null));
+  });
 
   const q = j?.questions[asset] ?? null;
   const offV = useCount(q?.off ?? 0.5);
@@ -188,14 +199,15 @@ export default function Home() {
         </>
       ),
     });
+    setMine({ id: d.call.id, deadline: d.call.deadline, source: d.call.source });
     setAsset(d.call.asset);
     load(d.call.asset);
   }
 
-  async function settle() {
+  async function settle(callId?: string) {
     setBusy("settle");
     setToast({ tone: "info", body: <>Checking real prices with Tatum at each deadline, then saving results and updated trust to memory…</> });
-    const r = await fetch("/api/settle", { method: "POST" });
+    const r = await fetch("/api/settle", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(callId ? { callId } : {}) });
     const d = await r.json();
     setBusy("");
     if (!r.ok) return setToast({ tone: "bad", body: d.error });
@@ -256,9 +268,9 @@ export default function Home() {
         </div>
 
         <section id="try" className="reveal">
-          <div className="head"><div><h2>Try it in 5 minutes</h2><p>Put your own name on the board. Every step below writes to Sui mainnet and is checked with real prices.</p></div></div>
+          <div className="head"><div><h2>Try it in 2 minutes</h2><p>Put your own name on the board. Every step below writes to Sui mainnet and is checked with real prices.</p></div></div>
           <div className="tryflow">
-            <a className="trystep" href="#call"><span className="k">1</span><b>Make a call</b><span>Pick an asset, a price and how sure you are. Leave "In 5 minutes".</span></a>
+            <a className="trystep" href="#call"><span className="k">1</span><b>Make a call</b><span>Pick an asset, a price and how sure you are. Leave "In 1 minute".</span></a>
             <div className="trystep"><span className="k">2</span><b>Get your receipt</b><span>Your call is saved before the deadline. The receipt link proves it was never changed.</span></div>
             <a className="trystep" href="#call"><span className="k">3</span><b>Check the result</b><span>After the deadline, press "Check results". The real price at that minute decides it.</span></a>
             <a className="trystep" href="#leaderboard"><span className="k">4</span><b>See your trust</b><span>You appear on the leaderboard. Ask again, and your record now counts.</span></a>
@@ -365,7 +377,7 @@ export default function Home() {
                 <div className="field"><label htmlFor="f-dir">Will be</label><select id="f-dir" name="direction" value={fDir} onChange={(e) => setFDir(e.target.value)}><option value="above">Above</option><option value="below">Below</option></select></div>
                 <div className="field w2"><label htmlFor="f-usd">Price in USD</label><input id="f-usd" name="usd" type="number" step="any" min="0" required inputMode="decimal" placeholder="Target price" value={fUsd} onChange={(e) => setFUsd(e.target.value)} /></div>
                 <div className="field w2"><label htmlFor="f-h">Deadline</label>
-                  <select id="f-h" name="hours" defaultValue="0.0833333"><option value="0.0833333">In 5 minutes</option><option value="0.25">In 15 minutes</option><option value="1">In 1 hour</option><option value="4">In 4 hours</option><option value="24">In 1 day</option><option value="168">In 1 week</option></select>
+                  <select id="f-h" name="hours" defaultValue="0.0166667"><option value="0.0166667">In 1 minute</option><option value="0.0833333">In 5 minutes</option><option value="0.25">In 15 minutes</option><option value="1">In 1 hour</option><option value="4">In 4 hours</option><option value="24">In 1 day</option><option value="168">In 1 week</option></select>
                 </div>
                 <div className="field w4"><label htmlFor="f-conf">{whose === "me" ? "How sure are you?" : "How sure are they?"}</label>
                   <div className="range"><input id="f-conf" name="confidence" type="range" min={1} max={99} value={conf} onChange={(e) => setConf(Number(e.target.value))} /><output className="tnum">{conf}%</output></div>
@@ -378,7 +390,7 @@ export default function Home() {
             <div className="card">
               <div className="head" style={{ marginBottom: 12 }}>
                 <div><h2>Waiting for results</h2><p>{open.length ? `${open.length} open call${open.length === 1 ? "" : "s"}.` : "Nothing open."} {due.length ? `${due.length} ready to check.` : ""}</p></div>
-                <button className="btn sm" onClick={settle} disabled={!!busy || !due.length}>{busy === "settle" ? <><span className="spin" />Checking…</> : due.length ? "Check results" : "Nothing due"}</button>
+                <button className="btn sm" onClick={() => settle(mine?.id)} disabled={!!busy || !due.length}>{busy === "settle" ? <><span className="spin" />Checking…</> : due.length ? "Check results" : "Nothing due"}</button>
               </div>
               <div className="list">
                 {open.slice(0, 8).map((c) => (
@@ -391,6 +403,16 @@ export default function Home() {
               </div>
             </div>
           </div>
+          {mine && (() => {
+            const ms = Date.parse(mine.deadline) + 62_000 - Date.now();
+            const secs = Math.max(0, Math.ceil(ms / 1000));
+            return (
+              <div className="toast countdown">
+                <div><b>{secs > 0 ? `${mine.source}'s call is decided in ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : "Deciding now…"}</b></div>
+                <div className="muted">{secs > 0 ? "Proven waits for Tatum's price at the deadline minute to be final, then settles it here by itself. Keep exploring." : "Checking Tatum's price for the deadline minute and writing the result to Walrus."}</div>
+              </div>
+            );
+          })()}
           {toast && <div className={"toast " + (toast.tone === "info" ? "" : toast.tone)}>{toast.body}</div>}
         </section>
 
