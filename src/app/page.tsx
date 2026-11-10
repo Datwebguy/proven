@@ -84,7 +84,7 @@ function useFollowing(j: Journal | null) {
     if (!following.length) return;
     const t = setInterval(async () => {
       try {
-        const d: Journal = await (await fetch("/api/state?asset=SUI", { cache: "no-store" })).json();
+        const d: Journal = await (await fetch("/api/state", { cache: "no-store" })).json();
         const now = snapshot(d.calls, following);
         const prev = seen.current ?? new Map();
         for (const c of d.calls) {
@@ -144,10 +144,11 @@ export default function Home() {
   const [, tick] = useState(0);
   useReveal();
 
-  const load = useCallback(async (a: string) => {
+  // One request returns every asset's answer, so switching assets is instant.
+  const load = useCallback(async (_asset?: string) => {
     setErr("");
     try {
-      const r = await fetch(`/api/state?asset=${a}`, { cache: "no-store" });
+      const r = await fetch("/api/state", { cache: "no-store" });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       setJ(d);
@@ -155,11 +156,11 @@ export default function Home() {
       setErr((e as Error).message);
     }
   }, []);
-  useEffect(() => { load(asset); }, [asset, load]);
+  useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/health").then((r) => r.json()).then(setHealth).catch(() => setHealth({})); }, []);
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30_000); return () => clearInterval(t); }, []);
 
-  const q = j?.question ?? null;
+  const q = j?.questions[asset] ?? null;
   const offV = useCount(q?.off ?? 0.5);
   const onV = useCount(q?.on ?? 0.5);
   const open = useMemo(() => (j?.calls ?? []).filter((c) => !c.outcome).sort((a, b) => a.deadline.localeCompare(b.deadline)), [j]);
@@ -566,7 +567,7 @@ function Profile({ source, j, onClose, isFollowing, onFollow }: { source: string
   );
 }
 
-function Verdict({ q }: { q: NonNullable<Journal["question"]> }) {
+function Verdict({ q }: { q: NonNullable<Journal["questions"][string]> }) {
   const top = q.rankOn[0];
   const loud = q.rankOff[0];
   const lean = q.on >= 0.5 ? "likely" : "unlikely";

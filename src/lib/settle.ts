@@ -9,7 +9,7 @@ import type { CallRecord, ProvenRecord } from "./types";
  * calls that already have an outcome in memory are skipped.
  */
 export async function settleDue(limitGroups = 8) {
-  const { records } = await loadAll();
+  const { records } = await loadAll({ fresh: true });
   const before = join(records.map((r) => r.record));
   const due = before.filter((j) => !j.outcome && isDue(j.call));
 

@@ -25,6 +25,7 @@ export type WriteResult = { blobId?: string; error?: string };
 /** Write one record; resolves once it is stored on Walrus, with its blob ID as the receipt. */
 export async function write(r: ProvenRecord): Promise<string> {
   const res = await mem().rememberAndWait(encode(r), NAMESPACE);
+  invalidate();
   return res.blob_id;
 }
 
@@ -40,6 +41,7 @@ export async function writeMany(rs: ProvenRecord[], onProgress?: (done: number, 
     for (const it of res.results) out.push(it.status === "done" && it.blob_id ? { blobId: it.blob_id } : { error: it.error ?? it.status });
     onProgress?.(out.length, rs.length);
   }
+  invalidate();
   return out;
 }
 
@@ -61,9 +63,38 @@ async function countStored(m: MemWal) {
  * Rebuild the whole journal from Walrus Memory. Recall returns at most 100 decrypted records per
  * question, so if the first pass is full we ask narrower questions until the count matches.
  */
-export async function loadAll(): Promise<{ records: Recalled[]; stored: number; recalled: number }> {
+type Loaded = { records: Recalled[]; stored: number; recalled: number; rebuiltAt: string };
+
+/**
+ * A rebuild is reused for a few seconds so that several visitors (or several requests from one page)
+ * don't each decrypt the whole journal again. Every write clears it, so new calls and results show at once.
+ * Walrus stays the only source of truth: the cache only ever holds a copy of the latest rebuild.
+ */
+const FRESH_MS = Number(process.env.REBUILD_CACHE_MS ?? 20_000);
+let cached: { at: number; value: Loaded } | null = null;
+let inflight: Promise<Loaded> | null = null;
+export const invalidate = () => { cached = null; };
+
+export async function loadAll(opts: { fresh?: boolean } = {}): Promise<Loaded> {
+  if (opts.fresh) {
+    const value = await rebuild();
+    cached = { at: Date.now(), value };
+    return value;
+  }
+  if (cached && Date.now() - cached.at < FRESH_MS) return cached.value;
+  if (inflight) return inflight;
+  inflight = rebuild()
+    .then((value) => { cached = { at: Date.now(), value }; return value; })
+    .finally(() => { inflight = null; });
+  return inflight;
+}
+
+/**
+ * Rebuild the whole journal from Walrus Memory. Recall returns at most 100 decrypted records per
+ * question, so when the journal is larger we ask several narrower questions in parallel and merge.
+ */
+async function rebuild(): Promise<Loaded> {
   const m = mem();
-  const stored = await countStored(m);
   const seen = new Set<string>();
   const records = new Map<string, Recalled>();
 
@@ -77,16 +108,12 @@ export async function loadAll(): Promise<{ records: Recalled[]; stored: number; 
     return results.length;
   };
 
-  const first = await pull("PROVEN/2", "recent");
+  const [stored, first] = await Promise.all([countStored(m), pull("PROVEN/2", "recent")]);
   if (seen.size < stored) {
     const narrower = first >= 100
-      ? ["PROVEN/2 CALL", "PROVEN/2 OUTCOME", "PROVEN/2 CALIBRATION", "PROVEN/2 CALL strategy", "PROVEN/2 CALL person"]
+      ? ["PROVEN/2 CALL", "PROVEN/2 OUTCOME", "PROVEN/2 CALIBRATION", "PROVEN/2 CALL strategy", "PROVEN/2 CALL person", "PROVEN/2 CALL SUI", "PROVEN/2 CALL SOL", "PROVEN/2 CALL BTC", "PROVEN/2 CALL ETH"]
       : ["PROVEN/2"];
-    for (const q of narrower) {
-      if (seen.size >= stored) break;
-      await pull(q);
-      if (seen.size < stored) await pull(q, "recent");
-    }
+    await Promise.all(narrower.flatMap((q) => [pull(q), pull(q, "recent")]));
   }
-  return { records: [...records.values()], stored, recalled: seen.size };
+  return { records: [...records.values()], stored, recalled: seen.size, rebuiltAt: new Date().toISOString() };
 }
