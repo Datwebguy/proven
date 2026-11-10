@@ -319,7 +319,7 @@ export default function Home() {
                   <span className="pos">{i + 1}</span>
                   <div><div className="nm"><button className="linkbtn" onClick={() => setProfile(s.source)}>{s.source}</button> <Kind origin={s.origin} /> <span className={"badge " + v[0]}>{v[1]}</span></div>{s.rule && <div className="rule">{s.rule}</div>}</div>
                   <div className="facts">{s.resolved ? <>Right {pct(s.hitRate)} of the time<br />Claims {pct(s.avgConfidence)} on average</> : "No results yet"}</div>
-                  <div className="trust"><b className="tnum">{pct(s.weight)}</b><span>trust</span></div>
+                  <div className="trust"><b className="tnum">{s.score}</b><span>score · trust {pct(s.weight)}</span></div>
                 </div>
               );
             })}
@@ -428,11 +428,14 @@ function Profile({ source, j, onClose }: { source: string; j: Journal; onClose: 
       <aside className="drawer" role="dialog" aria-label={`${source}'s record`} onClick={(e) => e.stopPropagation()}>
         <div className="drawer-head">
           <div><div className="muted">Record</div><h3>{source}</h3></div>
-          <button className="btn ghost sm" onClick={onClose} aria-label="Close">Close</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <a className="btn sm" href={`/s/${encodeURIComponent(source)}`} target="_blank" rel="noreferrer">Share record</a>
+            <button className="btn ghost sm" onClick={onClose} aria-label="Close">Close</button>
+          </div>
         </div>
         {st?.rule && <p className="muted" style={{ marginTop: 0 }}>{st.rule}</p>}
         <div className="stats" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-          <div className="stat"><b className="tnum">{st ? pct(st.weight) : "—"}</b><span>trust · #{rank}</span></div>
+          <div className="stat"><b className="tnum">{st ? st.score : "—"}</b><span>{st ? st.label : "score"} · #{rank}</span></div>
           <div className="stat"><b className="tnum">{st?.resolved ? pct(st.hitRate) : "—"}</b><span>right</span></div>
           <div className="stat"><b className="tnum">{st?.resolved ? pct(st.avgConfidence) : "—"}</b><span>claimed</span></div>
         </div>

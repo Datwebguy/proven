@@ -1,5 +1,5 @@
 import { loadAll } from "./memory";
-import { guidance, join, learningCurve, sourceStats } from "./scoring";
+import { guidance, join, learningCurve, provenScore, scoreLabel, sourceStats } from "./scoring";
 import { STRATEGIES } from "./strategies";
 import { claimText } from "./types";
 
@@ -26,7 +26,10 @@ export async function buildJournal(asset: string) {
     question: g.claim
       ? { claim: claimText(g.claim), deadline: g.claim.deadline, off: g.off, on: g.on, rankOff: g.rankOff, rankOn: g.rankOn, rows: g.rows }
       : null,
-    sources: sources.map((s) => ({ ...s, rule: STRATEGIES.find((x) => x.name === s.source)?.rule ?? null })),
+    sources: sources.map((s) => {
+      const score = provenScore(s);
+      return { ...s, score, label: scoreLabel(score, s.resolved), rule: STRATEGIES.find((x) => x.name === s.source)?.rule ?? null };
+    }),
     curve: learningCurve(joined),
     calls: joined
       .map(({ call, outcome }) => ({
