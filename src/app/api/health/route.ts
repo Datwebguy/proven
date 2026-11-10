@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { SuiGrpcClient } from "@mysten/sui/grpc";
-import { latestCheckpoint } from "@/lib/chain";
+import { latestCheckpoint, tatumLatestCheckpoint } from "@/lib/chain";
 import { mem } from "@/lib/memory";
 import { spotUsd } from "@/lib/tatum";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const msg = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 160);
 
@@ -25,19 +25,9 @@ export async function GET() {
     out.tatumPrice = msg(e);
   }
 
-  // Ask Tatum's Sui gRPC directly (no fallback), so this shows the real answer.
+  // Tatum's Sui gRPC only (no fallback), so this shows the real answer.
   try {
-    const c: any = new SuiGrpcClient({
-      network: "mainnet",
-      baseUrl: process.env.TATUM_SUI_GRPC_URL ?? "https://sui-mainnet-grpc.gateway.tatum.io",
-      fetch: (u, i) => {
-        const h = new Headers(i?.headers);
-        if (process.env.TATUM_API_KEY) h.set("x-api-key", process.env.TATUM_API_KEY);
-        return fetch(u, { ...i, headers: h });
-      },
-    });
-    const r = await c.ledgerService.getCheckpoint({ checkpointId: { oneofKind: undefined }, readMask: { paths: ["sequence_number"] } });
-    out.tatumSuiGrpc = `ok: checkpoint ${String(r.response.checkpoint.sequenceNumber)}`;
+    out.tatumSuiGrpc = `ok: checkpoint ${await tatumLatestCheckpoint()}`;
   } catch (e) {
     out.tatumSuiGrpc = msg(e);
   }
