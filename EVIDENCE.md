@@ -1,12 +1,13 @@
 # Mainnet evidence
 
-Generated 2026-11-10T07:58:16.875Z from the Walrus Memory index (`listMemories`), not from the app.
+Generated 2026-11-10T11:16:35.849Z from the Walrus Memory index (`listMemories`), not from the app.
 
 - Network: **Sui mainnet**, relayer `https://relayer.memory.walrus.xyz`
 - Walrus Memory account: [`0x038bd5df89171c889ce8e8b9292e40ecd6f51939093a025207a0d93d7b4de536`](https://suiscan.xyz/mainnet/object/0x038bd5df89171c889ce8e8b9292e40ecd6f51939093a025207a0d93d7b4de536)
-- Total records: **190**
+- Total records: **222**
   - `proven-v1`: 90 (first prototype, kept as history)
-  - `proven-v2`: 100 (current journal: strategies on Tatum prices)
+  - `proven-v2`: 124 (one record per memory; carried into proven-v3)
+  - `proven-v3`: 8 (current journal: one bundle of records per write)
 
 Every blob link opens the stored object on the Walrus mainnet aggregator. Records are Seal-encrypted,
 so the link proves the record exists and when it was written; the app decrypts them to rebuild the page.
@@ -203,3 +204,35 @@ so the link proves the record exists and when it was written; the app decrypts t
 | 188 | proven-v2 | 2026-11-10 06:42:19 | [`nnWDDaxR16U2CwLNjChd6_51KhZsDAh5xvtfakykNIY`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/nnWDDaxR16U2CwLNjChd6_51KhZsDAh5xvtfakykNIY) | 600 |
 | 189 | proven-v2 | 2026-11-10 06:42:20 | [`2fUmb9jguRbwxdoMGYiBcZNClqTfiQrcfuX93417ieQ`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/2fUmb9jguRbwxdoMGYiBcZNClqTfiQrcfuX93417ieQ) | 605 |
 | 190 | proven-v2 | 2026-11-10 06:42:21 | [`nGauVnkQAsy7W3z2EctDgKYbi4pM2FhFeLFlfcdlLzY`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/nGauVnkQAsy7W3z2EctDgKYbi4pM2FhFeLFlfcdlLzY) | 605 |
+| 191 | proven-v2 | 2026-11-10 10:39:39 | [`PYrsronAHBsufCc7OQnP1P50f8RvEgucvozvifEKYlQ`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/PYrsronAHBsufCc7OQnP1P50f8RvEgucvozvifEKYlQ) | 426 |
+| 192 | proven-v2 | 2026-11-10 10:39:39 | [`prfw70MEeKd6AT-Wl4kynIClWiUA-L5mQpSTIenHPYY`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/prfw70MEeKd6AT-Wl4kynIClWiUA-L5mQpSTIenHPYY) | 423 |
+| 193 | proven-v2 | 2026-11-10 10:39:39 | [`Fu04X-whP58jBKBr7Ayj7j21KY0BqlOl-PSk2271PNs`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/Fu04X-whP58jBKBr7Ayj7j21KY0BqlOl-PSk2271PNs) | 420 |
+| 194 | proven-v2 | 2026-11-10 10:39:39 | [`ZRsdMost2LAVseKHEl37ep4Yc6ecifnmTWIbKRxtpPc`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/ZRsdMost2LAVseKHEl37ep4Yc6ecifnmTWIbKRxtpPc) | 603 |
+| 195 | proven-v2 | 2026-11-10 10:39:40 | [`0v2rXWorsP0ah3rJFlWPkhM9Dz664OZj8l2mS4CNJiE`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/0v2rXWorsP0ah3rJFlWPkhM9Dz664OZj8l2mS4CNJiE) | 597 |
+| 196 | proven-v2 | 2026-11-10 10:39:41 | [`mcXqr7Zqwjw61kfITVkaR9nvhMonDZu41gqJIhtBwUw`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/mcXqr7Zqwjw61kfITVkaR9nvhMonDZu41gqJIhtBwUw) | 599 |
+| 197 | proven-v2 | 2026-11-10 10:39:41 | [`e-QkpYuNFU-kxVfqCHdEiQNLVma_CVYz14_muZupjHQ`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/e-QkpYuNFU-kxVfqCHdEiQNLVma_CVYz14_muZupjHQ) | 597 |
+| 198 | proven-v2 | 2026-11-10 10:39:42 | [`OD67tlMlaJPyvvdopvO94768QzOoGwodI3j3cq-C2Bs`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/OD67tlMlaJPyvvdopvO94768QzOoGwodI3j3cq-C2Bs) | 425 |
+| 199 | proven-v2 | 2026-11-10 10:42:04 | [`wQrhWD3vLFPz9_3qyfaZbwkFQIQyUKAGhb8PIkWEJgM`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/wQrhWD3vLFPz9_3qyfaZbwkFQIQyUKAGhb8PIkWEJgM) | 600 |
+| 200 | proven-v2 | 2026-11-10 10:42:05 | [`T1lzyxZRpmQucUFPeH5c4VFmUZ8Ii9tPpH3uW0ZFMBg`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/T1lzyxZRpmQucUFPeH5c4VFmUZ8Ii9tPpH3uW0ZFMBg) | 605 |
+| 201 | proven-v2 | 2026-11-10 10:42:05 | [`CkQfuMMxme-Ke3pjz13Q88wCCzqDVk0Vl9oLuPQBKK4`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/CkQfuMMxme-Ke3pjz13Q88wCCzqDVk0Vl9oLuPQBKK4) | 607 |
+| 202 | proven-v2 | 2026-11-10 10:42:05 | [`HYDDtQKxxv95mGW85MXNQjYopt3WQ2IYayBskdlnNiA`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/HYDDtQKxxv95mGW85MXNQjYopt3WQ2IYayBskdlnNiA) | 601 |
+| 203 | proven-v2 | 2026-11-10 10:42:05 | [`3M4VvZazdjllVv0V7JM0BkoN7OxXA0KsHQLJMxy2L5Q`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/3M4VvZazdjllVv0V7JM0BkoN7OxXA0KsHQLJMxy2L5Q) | 601 |
+| 204 | proven-v2 | 2026-11-10 10:42:05 | [`69RCfti6VuLja7OX8r2WL3kHRhOsNEzKC9A0RLGulYA`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/69RCfti6VuLja7OX8r2WL3kHRhOsNEzKC9A0RLGulYA) | 603 |
+| 205 | proven-v2 | 2026-11-10 10:42:05 | [`JNokSYzYOWZCWHEA7QwfZ7YJCMBR_EdPQIiRaEPyV38`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/JNokSYzYOWZCWHEA7QwfZ7YJCMBR_EdPQIiRaEPyV38) | 607 |
+| 206 | proven-v2 | 2026-11-10 10:42:05 | [`ON6ZVFcFzrSJqqRVQqRz-Ch1PTi33ylUU3jllMCOiMI`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/ON6ZVFcFzrSJqqRVQqRz-Ch1PTi33ylUU3jllMCOiMI) | 601 |
+| 207 | proven-v2 | 2026-11-10 10:42:05 | [`QHyiWPuv5r_VfsMXaiRPEXMu7H5n-LUD0ZndZlHEC3g`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/QHyiWPuv5r_VfsMXaiRPEXMu7H5n-LUD0ZndZlHEC3g) | 602 |
+| 208 | proven-v2 | 2026-11-10 10:42:06 | [`DhArOYSQZaIStme8G-_xgWAusawgDZEG2qBNjVipR3o`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/DhArOYSQZaIStme8G-_xgWAusawgDZEG2qBNjVipR3o) | 603 |
+| 209 | proven-v2 | 2026-11-10 10:42:06 | [`CELB-VeW_s-uLENRQo60HFkXrIINMA5ahdUEllOjuw0`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/CELB-VeW_s-uLENRQo60HFkXrIINMA5ahdUEllOjuw0) | 607 |
+| 210 | proven-v2 | 2026-11-10 10:42:07 | [`_lhhAGFeMartfnaUT1fEIwUAIfek1tvp0YUE_jmFjYs`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/_lhhAGFeMartfnaUT1fEIwUAIfek1tvp0YUE_jmFjYs) | 603 |
+| 211 | proven-v2 | 2026-11-10 10:42:07 | [`9PgkzkUaSGHrLaG7PWU4zwSErSb-VFB849bs2sKOv44`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/9PgkzkUaSGHrLaG7PWU4zwSErSb-VFB849bs2sKOv44) | 605 |
+| 212 | proven-v2 | 2026-11-10 10:42:07 | [`edngU3eKs-amvK7l3aNb1ctVZamMsWiZ02i5DoahSjs`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/edngU3eKs-amvK7l3aNb1ctVZamMsWiZ02i5DoahSjs) | 598 |
+| 213 | proven-v2 | 2026-11-10 10:42:07 | [`xcFb3JCxuwokaSmHT8JxYx9iWITL-5KWfbOoUgQUPR0`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/xcFb3JCxuwokaSmHT8JxYx9iWITL-5KWfbOoUgQUPR0) | 605 |
+| 214 | proven-v2 | 2026-11-10 10:42:07 | [`UBT3N4Q7nIophzvq7ZC4ONQ4GZW4x9g23qG-IoKw7go`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/UBT3N4Q7nIophzvq7ZC4ONQ4GZW4x9g23qG-IoKw7go) | 596 |
+| 215 | proven-v3 | 2026-11-10 10:48:49 | [`_ZPRW9zoT2fHoIoidXyWow1ySivPVqlbmYnrgu3QHHo`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/_ZPRW9zoT2fHoIoidXyWow1ySivPVqlbmYnrgu3QHHo) | 6062 |
+| 216 | proven-v3 | 2026-11-10 10:49:10 | [`HDNQioUJD7yYK0YPUfKnfBdQqb-dw7ezKQ34ATI9PUM`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/HDNQioUJD7yYK0YPUfKnfBdQqb-dw7ezKQ34ATI9PUM) | 6070 |
+| 217 | proven-v3 | 2026-11-10 10:49:31 | [`LJm2shXFfNry_xFYt7ycOS8cVyiMYrDCcdcwJzTbs2Y`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/LJm2shXFfNry_xFYt7ycOS8cVyiMYrDCcdcwJzTbs2Y) | 6070 |
+| 218 | proven-v3 | 2026-11-10 10:49:50 | [`UzWF3RJwERJGP7XveQJyTk3lHs_nw-IdnLr1CrWWqf0`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/UzWF3RJwERJGP7XveQJyTk3lHs_nw-IdnLr1CrWWqf0) | 6038 |
+| 219 | proven-v3 | 2026-11-10 10:50:13 | [`SII_HCl4leUwWOyvKpRZQL7m9O6Hf6NBsg_EOtPEaMo`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/SII_HCl4leUwWOyvKpRZQL7m9O6Hf6NBsg_EOtPEaMo) | 6054 |
+| 220 | proven-v3 | 2026-11-10 10:50:30 | [`9F9K8eVCivP05LvEt44FHOIqBz6hfjqHK3LTwW2cYa0`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/9F9K8eVCivP05LvEt44FHOIqBz6hfjqHK3LTwW2cYa0) | 6745 |
+| 221 | proven-v3 | 2026-11-10 10:50:51 | [`tIvHf_SdD4fFSJZQ4lRA-WsFMnlHdmUf7pem9W2F0Ug`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/tIvHf_SdD4fFSJZQ4lRA-WsFMnlHdmUf7pem9W2F0Ug) | 2452 |
+| 222 | proven-v3 | 2026-11-10 10:51:12 | [`5d4CPNnnfPnnrv7j54650AZsGrOB-nHHhbEQL46aYhA`](https://aggregator.walrus-mainnet.walrus.space/v1/blobs/5d4CPNnnfPnnrv7j54650AZsGrOB-nHHhbEQL46aYhA) | 6054 |

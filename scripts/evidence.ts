@@ -30,7 +30,7 @@ async function main() {
     `- Network: **Sui mainnet**, relayer \`https://relayer.memory.walrus.xyz\``,
     `- Walrus Memory account: [\`${account}\`](https://suiscan.xyz/mainnet/object/${account})`,
     `- Total records: **${rows.length}**`,
-    ...Object.entries(byNs).map(([ns, n]) => `  - \`${ns}\`: ${n}${ns === "proven-v2" ? " (current journal: strategies on Tatum prices)" : ns === "proven-v1" ? " (first prototype, kept as history)" : ""}`),
+    ...Object.entries(byNs).map(([ns, n]) => `  - \`${ns}\`: ${n}${ns === "proven-v2" ? " (one record per memory; carried into proven-v3)" : ns === "proven-v1" ? " (first prototype, kept as history)" : ns === "proven-v3" ? " (current journal: one bundle of records per write)" : ""}`),
     "",
     "Every blob link opens the stored object on the Walrus mainnet aggregator. Records are Seal-encrypted,",
     "so the link proves the record exists and when it was written; the app decrypts them to rebuild the page.",

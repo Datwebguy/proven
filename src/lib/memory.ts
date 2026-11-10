@@ -1,9 +1,9 @@
 import { MemWal } from "@mysten-incubation/memwal";
-import { decode, encode } from "./codec";
+import { decodeAll, encodeBundle, type Stored } from "./codec";
 import type { ProvenRecord, Recalled } from "./types";
 
 /** Walrus Memory on Sui mainnet is the only store of record. There is no database. */
-export const NAMESPACE = process.env.MEMWAL_NAMESPACE ?? "proven-v2";
+export const NAMESPACE = process.env.MEMWAL_NAMESPACE ?? "proven-v3";
 
 let client: MemWal | null = null;
 export function mem(): MemWal {
@@ -24,21 +24,26 @@ export type WriteResult = { blobId?: string; error?: string };
 
 /** Write one record; resolves once it is stored on Walrus, with its blob ID as the receipt. */
 export async function write(r: ProvenRecord): Promise<string> {
-  const res = await mem().rememberAndWait(encode(r), NAMESPACE);
+  const res = await mem().rememberAndWait(encodeBundle([r]), NAMESPACE);
   invalidate();
   return res.blob_id;
 }
 
-/** Write many records, 20 per request (the relayer's bulk limit). Results are in input order. */
-export async function writeMany(rs: ProvenRecord[], onProgress?: (done: number, total: number) => void): Promise<WriteResult[]> {
+/**
+ * Write many records as one bundle (one Walrus memory), so a round or a settlement is a single
+ * memory. Very large batches are split into bundles of 60. Results are in input order; records in
+ * the same bundle share its blob ID as their receipt.
+ */
+export async function writeMany(rs: Stored[], onProgress?: (done: number, total: number) => void): Promise<WriteResult[]> {
   const out: WriteResult[] = [];
-  for (let i = 0; i < rs.length; i += 20) {
-    const chunk = rs.slice(i, i + 20);
-    const res = await mem().rememberBulkAndWait(
-      chunk.map((r) => ({ text: encode(r), namespace: NAMESPACE })),
-      { timeoutMs: 280_000, pollIntervalMs: 2000 },
-    );
-    for (const it of res.results) out.push(it.status === "done" && it.blob_id ? { blobId: it.blob_id } : { error: it.error ?? it.status });
+  for (let i = 0; i < rs.length; i += 60) {
+    const chunk = rs.slice(i, i + 60);
+    try {
+      const res = await mem().rememberAndWait(encodeBundle(chunk), NAMESPACE);
+      chunk.forEach(() => out.push({ blobId: res.blob_id }));
+    } catch (e) {
+      chunk.forEach(() => out.push({ error: (e as Error).message }));
+    }
     onProgress?.(out.length, rs.length);
   }
   invalidate();
@@ -59,10 +64,6 @@ async function countStored(m: MemWal) {
   return count;
 }
 
-/**
- * Rebuild the whole journal from Walrus Memory. Recall returns at most 100 decrypted records per
- * question, so if the first pass is full we ask narrower questions until the count matches.
- */
 type Loaded = { records: Recalled[]; stored: number; recalled: number; rebuiltAt: string };
 
 /**
@@ -90,30 +91,27 @@ export async function loadAll(opts: { fresh?: boolean } = {}): Promise<Loaded> {
 }
 
 /**
- * Rebuild the whole journal from Walrus Memory. Recall returns at most 100 decrypted records per
- * question, so when the journal is larger we ask several narrower questions in parallel and merge.
+ * Rebuild the whole journal from Walrus Memory. Each memory is a bundle of records, so the journal
+ * is a handful of memories and one recall returns them all. If the namespace ever holds more than
+ * one recall can return, a second pass by relevance picks up the rest.
  */
 async function rebuild(): Promise<Loaded> {
   const m = mem();
   const seen = new Set<string>();
-  const records = new Map<string, Recalled>();
+  const records: Recalled[] = [];
 
-  const pull = async (query: string, sort?: "recent") => {
-    const { results } = await m.recall({ query, limit: 100, namespace: NAMESPACE, ...(sort ? { sort } : {}), timeoutMs: 90_000 });
+  const pull = async (sort?: "recent") => {
+    const { results } = await m.recall({ query: "PROVEN/3 records", limit: 100, namespace: NAMESPACE, ...(sort ? { sort } : {}), timeoutMs: 90_000 });
     for (const r of results) {
+      if (seen.has(r.blob_id)) continue;
       seen.add(r.blob_id);
-      const record = decode(r.text);
-      if (record && !records.has(r.blob_id)) records.set(r.blob_id, { blobId: r.blob_id, createdAt: r.created_at, record });
+      for (const { receipt, ...record } of decodeAll(r.text)) {
+        records.push({ blobId: receipt ?? r.blob_id, createdAt: r.created_at, record: record as ProvenRecord });
+      }
     }
-    return results.length;
   };
 
-  const [stored, first] = await Promise.all([countStored(m), pull("PROVEN/2", "recent")]);
-  if (seen.size < stored) {
-    const narrower = first >= 100
-      ? ["PROVEN/2 CALL", "PROVEN/2 OUTCOME", "PROVEN/2 CALIBRATION", "PROVEN/2 CALL strategy", "PROVEN/2 CALL person", "PROVEN/2 CALL SUI", "PROVEN/2 CALL SOL", "PROVEN/2 CALL BTC", "PROVEN/2 CALL ETH"]
-      : ["PROVEN/2"];
-    await Promise.all(narrower.flatMap((q) => [pull(q), pull(q, "recent")]));
-  }
-  return { records: [...records.values()], stored, recalled: seen.size, rebuiltAt: new Date().toISOString() };
+  const [stored] = await Promise.all([countStored(m), pull("recent")]);
+  if (seen.size < stored) await pull();
+  return { records, stored, recalled: seen.size, rebuiltAt: new Date().toISOString() };
 }

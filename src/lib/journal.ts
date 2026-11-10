@@ -27,7 +27,7 @@ export async function buildJournal() {
   );
 
   return {
-    memory: { stored, recalled, complete: recalled >= stored, account: process.env.MEMWAL_ACCOUNT_ID ?? "", rebuiltAt },
+    memory: { stored, recalled, records: records.length, complete: recalled >= stored, account: process.env.MEMWAL_ACCOUNT_ID ?? "", rebuiltAt },
     assets,
     questions,
     sources: sources.map((s) => {

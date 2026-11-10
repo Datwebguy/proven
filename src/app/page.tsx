@@ -225,7 +225,7 @@ export default function Home() {
     load(asset);
   }
 
-  const status = err ? { cls: "off", text: "Memory unreachable" } : j ? { cls: "", text: `${j.memory.stored} records on Sui mainnet` } : { cls: "wait", text: "Recalling memory…" };
+  const status = err ? { cls: "off", text: "Memory unreachable" } : j ? { cls: "", text: `${j.memory.records} records on Sui mainnet` } : { cls: "wait", text: "Recalling memory…" };
 
   return (
     <>
@@ -453,8 +453,8 @@ export default function Home() {
         <section id="proof" className="reveal">
           <div className="head"><div><h2>Proof</h2><p>Nothing here lives in a private database. The page you are reading was rebuilt from records on Sui mainnet a moment ago.</p></div></div>
           <div className="stats">
-            <div className="stat"><b className="tnum">{j?.memory.stored ?? "—"}</b><span>records stored in Walrus Memory</span></div>
-            <div className="stat"><b className="tnum">{j?.memory.recalled ?? "—"}</b><span>recalled to build this page{j?.memory.complete ? " (all of them)" : ""}</span></div>
+            <div className="stat"><b className="tnum">{j?.memory.records ?? "—"}</b><span>records in Walrus Memory, in {j?.memory.stored ?? "—"} memories</span></div>
+            <div className="stat"><b className="tnum">{j ? `${j.memory.recalled}/${j.memory.stored}` : "—"}</b><span>memories recalled to build this page{j?.memory.complete ? " (all of them)" : ""}</span></div>
             <div className="stat"><b className="tnum">{j?.counts.resolved ?? "—"}</b><span>calls settled by real prices</span></div>
             <div className="stat"><b className="tnum">{j?.sources.length ?? "—"}</b><span>sources being scored</span></div>
           </div>

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { write } from "@/lib/memory";
 import { strategyByName } from "@/lib/strategies";
 import { ASSETS, spot } from "@/lib/tatum";
 import type { CallRecord } from "@/lib/types";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /** Log a person's call. It is written to memory before the event; the blob ID is the receipt. */
 export async function POST(req: Request) {
@@ -50,6 +51,7 @@ export async function POST(req: Request) {
       ...(link ? { link } : {}),
     };
     const blobId = await write(call);
+    revalidateTag("journal");
     return NextResponse.json({ call, blobId });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
