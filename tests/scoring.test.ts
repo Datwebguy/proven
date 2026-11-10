@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { guidance, join, sourceStats } from "../src/lib/scoring";
+import { guidance, join, learningCurve, reliability, sourceStats } from "../src/lib/scoring";
 import type { ProvenRecord } from "../src/lib/types";
 
 const call = (id: string, source: string, conf: number, topic = "SUI"): ProvenRecord => ({
@@ -32,6 +32,28 @@ describe("scoring", () => {
     const good = g.rows.find((r) => r.source === "Good")!, bad = g.rows.find((r) => r.source === "Bad")!;
     expect(bad.adjusted).toBeLessThan(bad.stated - 0.3); // overconfident 95% collapses toward a coin flip
     expect(good.adjusted).toBeGreaterThan(good.stated);  // under-confident but right: boosted
+  });
+
+  it("learning curve starts flat and diverges as outcomes resolve", () => {
+    const dated = recs.map((r, i) => (r.kind === "CALL" ? { ...r, deadline: `2026-01-${String(1 + (i >> 2)).padStart(2, "0")}T00:00:00Z` } : r));
+    const c = learningCurve(join(dated));
+    expect(c.points[0].weights["Good"]).toBeCloseTo(c.points[0].weights["Bad"]);
+    const last = c.points[c.points.length - 1].weights;
+    expect(last["Good"]).toBeGreaterThan(last["Bad"]);
+    for (const p of c.points) expect(Object.values(p.weights).reduce((a, b) => a + b, 0)).toBeCloseTo(1);
+  });
+
+  it("reliability buckets compare stated confidence with actual hit rate", () => {
+    const r = reliability(join(recs), "Bad");
+    expect(r).toHaveLength(1);
+    expect(r[0].hits).toBe(0); // 90% stated, never right
+    expect(r[0].n).toBe(6);
+  });
+
+  it("the same recalled records always produce the same ranking (pure, no hidden state)", () => {
+    const a = guidance(join(recs), "SUI"), b = guidance(join([...recs].reverse()), "SUI");
+    expect(b.rankOn).toEqual(a.rankOn);
+    expect(b.on).toBeCloseTo(a.on);
   });
 
   it("with no history, memory-on equals a flat prior (no invented trust)", () => {

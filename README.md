@@ -43,9 +43,16 @@ the stored object but not its plaintext; Proven decrypts through the relayer wit
 ## Tatum usage
 
 - **Data API** (`/v4/data/rate/symbol`): resolves price calls and records spot at logging time.
-- **Sui gRPC gateway**: checkpoint reads for resolving on-chain claims. If the gateway refuses the
-  key, the code falls back to a public fullnode and the outcome's `evidence` field says which
-  source decided it (`tatum-sui-grpc` or `sui-fullnode-grpc`). Evidence labels are never faked.
+- **Sui gRPC gateway** (`sui-mainnet-grpc.gateway.tatum.io`, native gRPC via `@grpc/grpc-js`,
+  key as `x-api-key` metadata): checkpoint reads for resolving on-chain claims. If the gateway
+  refuses the key or is unreachable, the code falls back to a public fullnode and the outcome's
+  `evidence` field says which source decided it (`tatum-sui-grpc` or `sui-fullnode-grpc`).
+  Evidence labels are never faked.
+- `GET /api/health` reports live status of Walrus, Tatum prices and Tatum Sui gRPC (never keys).
+
+Note on the seed data: the 40 seeded outcomes were resolved while the Tatum Sui gateway was still
+rejecting our key, so they carry `sui-fullnode-grpc` evidence. Everything resolved after that
+(live price calls, new checkpoint claims) is decided through Tatum and labelled accordingly.
 
 ## Honest data disclosure
 
