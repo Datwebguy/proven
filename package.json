@@ -1,0 +1,32 @@
+{
+  "name": "proven",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A calibrated prediction journal that learns who is actually right, with Walrus Memory as the record.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest run",
+    "seed": "tsx scripts/seed.ts",
+    "smoke": "tsx scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@mysten-incubation/memwal": "^0.1.14",
+    "@mysten/seal": "^1.5.4",
+    "@mysten/sui": "^2.39.1",
+    "@mysten/walrus": "^1.2.39",
+    "next": "^15.5.29",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "dotenv": "^18.0.10",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.0"
+  }
+}
