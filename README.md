@@ -5,6 +5,7 @@
 <p align="center"><b>Know who is actually right.</b><br/>A prediction journal that remembers every call on Sui mainnet and learns whom to trust.</p>
 <p align="center">
   <a href="https://proven-ten.vercel.app"><b>Live app</b></a> ·
+  <a href="docs/blog.md">Blog post</a> ·
   <a href="EVIDENCE.md">Mainnet evidence</a> ·
   <a href="https://proven-ten.vercel.app/api/health">Live status</a>
 </p>
