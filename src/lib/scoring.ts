@@ -121,3 +121,19 @@ export function reliability(joined: Joined[], source: string) {
   }
   return buckets.filter((b) => b.n);
 }
+
+/** How each source's trust weight evolved as resolved claims accumulated (chronological by deadline). */
+export function learningCurve(joined: Joined[]) {
+  const resolved = joined
+    .filter((j) => j.outcome)
+    .sort((a, b) => a.call.deadline.localeCompare(b.call.deadline) || a.call.id.localeCompare(b.call.id));
+  const steps = [...new Set(resolved.map((j) => j.call.deadline))];
+  const sources = [...new Set(joined.map((j) => j.call.source))];
+  const points = [{ n: 0, weights: Object.fromEntries(sources.map((s) => [s, 1 / sources.length])) as Record<string, number> }];
+  steps.forEach((d, i) => {
+    const upTo = resolved.filter((j) => j.call.deadline <= d);
+    const stats = sourceStats([...upTo, ...joined.filter((j) => !j.outcome)]);
+    points.push({ n: i + 1, weights: Object.fromEntries(stats.map((s) => [s.source, s.weight])) });
+  });
+  return { sources, points };
+}

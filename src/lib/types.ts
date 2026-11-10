@@ -26,7 +26,7 @@ export type OutcomeRecord = {
   callId: string;
   result: boolean;       // was the claim true
   observed: string;      // e.g. "checkpoint 123 had 412 txs"
-  evidence: "tatum-price" | "tatum-sui-rpc" | "manual";
+  evidence: "tatum-price" | "tatum-sui-grpc" | "sui-fullnode-grpc" | "manual";
   resolvedAt: string;
 };
 

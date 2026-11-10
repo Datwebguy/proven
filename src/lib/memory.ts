@@ -22,17 +22,17 @@ export async function write(r: ProvenRecord): Promise<{ blobId: string }> {
   return { blobId: res.blob_id };
 }
 
-/** Write many records (bulk, <=20 per request). Returns blob ids in input order. */
-export async function writeMany(rs: ProvenRecord[]): Promise<{ blobId?: string; error?: string }[]> {
+/** Write many records (bulk, <=20 per request). Returns one result per input, in order. */
+export async function writeMany(rs: ProvenRecord[], onChunk?: (done: number, total: number) => void): Promise<{ blobId?: string; error?: string }[]> {
   const out: { blobId?: string; error?: string }[] = [];
   for (let i = 0; i < rs.length; i += 20) {
     const chunk = rs.slice(i, i + 20);
-    const res: any = await mem().rememberBulkAndWait(chunk.map((r) => ({ text: encode(r), namespace: NAMESPACE })));
-    const items: any[] = res.results ?? res.items ?? res.jobs ?? [];
-    chunk.forEach((_, k) => {
-      const it = items[k] ?? {};
-      out.push(it.blob_id ? { blobId: it.blob_id } : { error: it.error ?? it.status ?? "no blob_id returned" });
-    });
+    const res = await mem().rememberBulkAndWait(
+      chunk.map((r) => ({ text: encode(r), namespace: NAMESPACE })),
+      { timeoutMs: 280_000, pollIntervalMs: 2000 },
+    );
+    for (const it of res.results) out.push(it.status === "done" && it.blob_id ? { blobId: it.blob_id } : { error: it.error ?? it.status });
+    onChunk?.(out.length, rs.length);
   }
   return out;
 }
