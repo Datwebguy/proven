@@ -1,139 +1,122 @@
 import type { CallRecord, OutcomeRecord, ProvenRecord } from "./types";
 
-/** Prior strength: a source with 0 resolved calls is treated as `K` coin-flip calls. */
+/**
+ * Pure scoring. Everything here is a function of the records recalled from memory:
+ * same records in, same ranking out. Nothing is cached and nothing is set by hand.
+ */
+
+/** Prior strength: a source with no history is treated like K coin-flip calls. */
 export const K = 3;
 const COIN_BRIER = 0.25;
 
-export type SourceStats = {
-  source: string;
-  resolved: number;
-  open: number;
-  brier: number;        // raw mean Brier on resolved calls (NaN-safe: 0.25 when none)
-  postBrier: number;    // shrunk toward coin-flip
-  hitRate: number;      // raw directional hit rate
-  avgConfidence: number;// avg confidence in the side they picked
-  weight: number;       // normalized trust weight (sums to 1 across sources)
-  sample: boolean;
-};
-
 export type Joined = { call: CallRecord; outcome?: OutcomeRecord };
 
-/** Rebuild call<->outcome pairs purely from recalled records (latest outcome wins). */
 export function join(records: ProvenRecord[]): Joined[] {
   const calls = new Map<string, CallRecord>();
-  const outs = new Map<string, OutcomeRecord>();
+  const outcomeOf = new Map<string, OutcomeRecord>();
   for (const r of records) {
     if (r.kind === "CALL") calls.set(r.id, r);
-    else if (r.kind === "OUTCOME") {
-      const prev = outs.get(r.callId);
-      if (!prev || prev.resolvedAt <= r.resolvedAt) outs.set(r.callId, r);
+    if (r.kind === "OUTCOME") {
+      for (const id of r.callIds) {
+        const prev = outcomeOf.get(id);
+        if (!prev || prev.resolvedAt <= r.resolvedAt) outcomeOf.set(id, r);
+      }
     }
   }
-  return [...calls.values()].map((call) => ({ call, outcome: outs.get(call.id) }));
+  return [...calls.values()].map((call) => ({ call, outcome: outcomeOf.get(call.id) }));
 }
 
-const brierOf = (conf: number, truth: boolean) => {
-  const p = conf / 100;
-  return (p - (truth ? 1 : 0)) ** 2;
+const brierOf = (conf: number, truth: boolean) => (conf / 100 - (truth ? 1 : 0)) ** 2;
+const sideOf = (conf: number) => Math.max(conf, 100 - conf) / 100;
+const hit = (j: Joined) => (j.call.confidence >= 50) === j.outcome!.result;
+
+export type SourceStats = {
+  source: string;
+  origin: CallRecord["origin"];
+  resolved: number;
+  open: number;
+  brier: number;         // mean Brier over resolved calls (0 best, 1 worst)
+  hitRate: number;       // share of resolved calls where the side they picked happened
+  avgConfidence: number; // average confidence in the side they picked
+  weight: number;        // trust: normalized, sums to 1 across sources
 };
 
 export function sourceStats(joined: Joined[]): SourceStats[] {
   const by = new Map<string, Joined[]>();
-  for (const j of joined) {
-    const a = by.get(j.call.source) ?? [];
-    a.push(j);
-    by.set(j.call.source, a);
-  }
+  for (const j of joined) by.set(j.call.source, [...(by.get(j.call.source) ?? []), j]);
+
   const raw = [...by.entries()].map(([source, js]) => {
     const done = js.filter((j) => j.outcome);
     const n = done.length;
     const brier = n ? done.reduce((s, j) => s + brierOf(j.call.confidence, j.outcome!.result), 0) / n : COIN_BRIER;
-    const hits = done.filter((j) => (j.call.confidence >= 50) === j.outcome!.result).length;
-    const side = done.map((j) => Math.max(j.call.confidence, 100 - j.call.confidence) / 100);
-    const postBrier = (n * brier + K * COIN_BRIER) / (n + K);
     return {
       source,
+      origin: js[0].call.origin,
       resolved: n,
       open: js.length - n,
       brier,
-      postBrier,
-      hitRate: n ? hits / n : 0.5,
-      avgConfidence: n ? side.reduce((a, b) => a + b, 0) / n : 0.5,
-      sample: js.every((j) => j.call.sample === true),
+      postBrier: (n * brier + K * COIN_BRIER) / (n + K),
+      hitRate: n ? done.filter(hit).length / n : 0,
+      avgConfidence: n ? done.reduce((s, j) => s + sideOf(j.call.confidence), 0) / n : 0,
     };
   });
-  // skill = improvement over coin flip; floor at a small epsilon so nobody is zeroed out
+  // Skill = improvement over a coin flip. A small floor keeps every source in play.
   const skill = raw.map((r) => Math.max(COIN_BRIER - r.postBrier, 0) + 0.005);
   const total = skill.reduce((a, b) => a + b, 0);
-  return raw.map((r, i) => ({ ...r, weight: skill[i] / total }));
+  return raw.map(({ postBrier: _p, ...r }, i) => ({ ...r, weight: skill[i] / total }));
 }
 
-export type Opinion = {
-  source: string;
-  stated: number;   // confidence claim is true, 0-1
-  adjusted: number; // calibration-adjusted
-  weight: number;
-};
+export type Opinion = { source: string; callId: string; stated: number; adjusted: number; weight: number };
 
 /**
- * Memory-off: every source counts equally, stated confidence taken at face value.
- * Memory-on: trust weights from recalled history; each source's stated confidence is pulled
- * toward its *actual* hit rate when it has been over/under-confident.
+ * Answer "how likely is this asset's open claim, and whom should I trust?" two ways.
+ * Without memory: every source counts the same, stated confidence at face value.
+ * With memory: trust from track record, and each stated confidence blended with how often that
+ * source is actually right (more history => more weight on the record than on the claim).
  */
-export function guidance(joined: Joined[], topic: string) {
+export function guidance(joined: Joined[], asset: string) {
   const stats = sourceStats(joined);
-  const open = joined.filter((j) => !j.outcome && j.call.topic === topic);
-  const latest = new Map<string, CallRecord>();
-  for (const { call } of open) {
-    const p = latest.get(call.source);
-    if (!p || p.loggedAt <= call.loggedAt) latest.set(call.source, call);
+  const open = joined.filter((j) => !j.outcome && j.call.asset === asset);
+
+  // Group open calls by claim; answer for the claim most sources are talking about.
+  const groups = new Map<string, Joined[]>();
+  for (const j of open) {
+    const k = `${j.call.check.type}|${j.call.check.usd}|${j.call.deadline}`;
+    groups.set(k, [...(groups.get(k) ?? []), j]);
   }
-  const rows = [...latest.values()].map((call) => {
+  const focus = [...groups.values()].sort((a, b) => b.length - a.length || a[0].call.deadline.localeCompare(b[0].call.deadline))[0] ?? [];
+
+  const rows: Opinion[] = focus.map(({ call }) => {
     const st = stats.find((s) => s.source === call.source)!;
     const stated = call.confidence / 100;
-    const sideConf = Math.max(stated, 1 - stated);
-    // Blend what they claim with what they actually achieve; evidence (n) decides the mix.
+    const side = Math.max(stated, 1 - stated);
     const n = st.resolved;
-    const side = Math.min(0.99, Math.max(0.5, (n * st.hitRate + K * sideConf) / (n + K)));
-    const adjusted = stated >= 0.5 ? side : 1 - side;
-    return { source: call.source, stated, adjusted, weight: st.weight, callId: call.id };
+    const blended = Math.min(0.99, Math.max(0.5, (n * st.hitRate + K * side) / (n + K)));
+    return { source: call.source, callId: call.id, stated, adjusted: stated >= 0.5 ? blended : 1 - blended, weight: st.weight };
   });
+
   const off = rows.length ? rows.reduce((s, r) => s + r.stated, 0) / rows.length : 0.5;
   const wsum = rows.reduce((s, r) => s + r.weight, 0) || 1;
   const on = rows.length ? rows.reduce((s, r) => s + r.adjusted * r.weight, 0) / wsum : 0.5;
-  const rankOff = [...rows].sort((a, b) => a.source.localeCompare(b.source)).map((r) => r.source);
-  const rankOn = [...rows].sort((a, b) => b.weight - a.weight).map((r) => r.source);
-  return { rows, off, on, rankOff, rankOn, stats };
+  return {
+    claim: focus[0]?.call ?? null,
+    rows,
+    off,
+    on,
+    rankOff: [...rows].sort((a, b) => b.stated - a.stated).map((r) => r.source),
+    rankOn: [...rows].sort((a, b) => b.weight - a.weight).map((r) => r.source),
+  };
 }
 
-/** Reliability table for the user's own journal: stated confidence bucket vs actual hit rate. */
-export function reliability(joined: Joined[], source: string) {
-  const buckets = [
-    { lo: 50, hi: 60 }, { lo: 60, hi: 70 }, { lo: 70, hi: 80 }, { lo: 80, hi: 90 }, { lo: 90, hi: 101 },
-  ].map((b) => ({ ...b, n: 0, hits: 0 }));
-  for (const j of joined) {
-    if (j.call.source !== source || !j.outcome) continue;
-    const side = Math.max(j.call.confidence, 100 - j.call.confidence);
-    const b = buckets.find((x) => side >= x.lo && side < x.hi);
-    if (!b) continue;
-    b.n++;
-    if ((j.call.confidence >= 50) === j.outcome.result) b.hits++;
-  }
-  return buckets.filter((b) => b.n);
-}
-
-/** How each source's trust weight evolved as resolved claims accumulated (chronological by deadline). */
+/** Trust per source after each resolved deadline, oldest first: how the trust was learned. */
 export function learningCurve(joined: Joined[]) {
-  const resolved = joined
-    .filter((j) => j.outcome)
-    .sort((a, b) => a.call.deadline.localeCompare(b.call.deadline) || a.call.id.localeCompare(b.call.id));
-  const steps = [...new Set(resolved.map((j) => j.call.deadline))];
+  const resolved = joined.filter((j) => j.outcome);
+  const steps = [...new Set(resolved.map((j) => j.call.deadline))].sort();
   const sources = [...new Set(joined.map((j) => j.call.source))];
-  const points = [{ n: 0, weights: Object.fromEntries(sources.map((s) => [s, 1 / sources.length])) as Record<string, number> }];
-  steps.forEach((d, i) => {
-    const upTo = resolved.filter((j) => j.call.deadline <= d);
-    const stats = sourceStats([...upTo, ...joined.filter((j) => !j.outcome)]);
-    points.push({ n: i + 1, weights: Object.fromEntries(stats.map((s) => [s.source, s.weight])) });
-  });
+  const points = [{ at: "", weights: Object.fromEntries(sources.map((s) => [s, 1 / sources.length])) as Record<string, number> }];
+  for (const d of steps) {
+    const upTo = joined.map((j) => (j.outcome && j.call.deadline <= d ? j : { call: j.call }));
+    points.push({ at: d, weights: Object.fromEntries(sourceStats(upTo).map((s) => [s.source, s.weight])) });
+  }
   return { sources, points };
 }

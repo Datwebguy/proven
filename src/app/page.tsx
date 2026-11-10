@@ -1,52 +1,74 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Journal } from "@/lib/journal";
+import { Logo, Wordmark } from "./Logo";
 
-const ACCOUNT = process.env.NEXT_PUBLIC_MEMWAL_ACCOUNT_ID ?? "";
+const ASSETS = ["SUI", "SOL", "BTC", "ETH"];
+const COLORS = ["#0f766e", "#c2410c", "#4338ca", "#a16207", "#0369a1", "#be185d", "#15803d"];
 const pct = (x: number) => `${Math.round(x * 100)}%`;
-const short = (s?: string) => (s ? `${s.slice(0, 6)}…${s.slice(-4)}` : "");
-const receiptUrl = (b: string) => `https://aggregator.walrus-mainnet.walrus.space/v1/blobs/${b}`;
-const COLORS = ["#0f766e", "#b91c1c", "#b45309", "#4338ca", "#0369a1", "#be185d"];
-const TOPIC_LABEL: Record<string, string> = { SUI: "SUI price", SOL: "SOL price", BTC: "BTC price", ETH: "ETH price", "SUI-onchain": "Sui network activity" };
-const topicLabel = (t: string) => TOPIC_LABEL[t] ?? t;
+const short = (s?: string | null) => (s ? `${s.slice(0, 6)}…${s.slice(-4)}` : "");
+const blobUrl = (b: string) => `https://aggregator.walrus-mainnet.walrus.space/v1/blobs/${b}`;
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const usd = (x: number) => "$" + (x >= 1000 ? x.toLocaleString("en-US", { maximumFractionDigits: 0 }) : x >= 1 ? x.toFixed(2) : x.toFixed(4));
+const timeLeft = (iso: string) => {
+  const ms = Date.parse(iso) + 60_000 - Date.now();
+  if (ms <= 0) return null;
+  const m = Math.ceil(ms / 60000);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
+};
 
-/** Sample forecasters are stored as "Sample · Name"; show the name with a badge instead of the prefix. */
-function Name({ source }: { source: string }) {
-  const demo = source.startsWith("Sample · ");
-  return (
-    <>
-      {demo ? source.slice(9) : source}
-      {demo && <span className="chip demo">demo</span>}
-    </>
-  );
+type Health = { tatumPrice?: string; tatumSuiGrpc?: string; walrusRelayer?: string };
+type Toast = { tone: "good" | "bad" | "info"; body: React.ReactNode };
+
+/** Animates a number toward its target so changes are visible, not just swapped. */
+function useCount(target: number, ms = 900) {
+  const [v, setV] = useState(target);
+  const from = useRef(target);
+  useEffect(() => {
+    const start = performance.now();
+    const a = from.current;
+    let raf = 0;
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - start) / ms);
+      const e = 1 - Math.pow(1 - k, 3);
+      setV(a + (target - a) * e);
+      if (k < 1) raf = requestAnimationFrame(tick);
+      else from.current = target;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms]);
+  return v;
 }
 
-type ResolveResult = {
-  verdict: { result: boolean; observed: string; evidence: string };
-  blobs: { kind: string; blobId?: string; error?: string }[];
-  before: { off: number; on: number; rankOn: string[] };
-  after: { off: number; on: number; rankOn: string[] };
-};
+/** Fades sections in as they scroll into view. */
+function useReveal() {
+  useEffect(() => {
+    const els = document.querySelectorAll(".reveal");
+    const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && e.target.classList.add("in")), { threshold: 0.08 });
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  });
+}
 
-const untilText = (iso: string) => {
-  const ms = Date.parse(iso) - Date.now();
-  if (ms <= 0) return "ready to resolve";
-  const m = Math.round(ms / 60000);
-  return m < 60 ? `resolves in ${m} min` : `resolves in ${(m / 60).toFixed(1)} h`;
-};
+const Kind = ({ origin }: { origin: string }) => <span className={"badge " + (origin === "person" ? "brand" : "")}>{origin === "person" ? "Person" : "Strategy"}</span>;
 
 export default function Home() {
-  const [topic, setTopic] = useState("SUI");
+  const [asset, setAsset] = useState("SUI");
   const [j, setJ] = useState<Journal | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
-  const [showAll, setShowAll] = useState(false);
-  const [notice, setNotice] = useState<{ tone: "good" | "bad" | "info"; body: React.ReactNode } | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [health, setHealth] = useState<Health | null>(null);
+  const [allRows, setAllRows] = useState(false);
+  const [conf, setConf] = useState(70);
+  const [, tick] = useState(0);
+  useReveal();
 
-  const load = useCallback(async (t: string) => {
+  const load = useCallback(async (a: string) => {
     setErr("");
     try {
-      const r = await fetch(`/api/state?topic=${encodeURIComponent(t)}`, { cache: "no-store" });
+      const r = await fetch(`/api/state?asset=${a}`, { cache: "no-store" });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       setJ(d);
@@ -54,308 +76,329 @@ export default function Home() {
       setErr((e as Error).message);
     }
   }, []);
-  useEffect(() => { load(topic); }, [topic, load]);
+  useEffect(() => { load(asset); }, [asset, load]);
+  useEffect(() => { fetch("/api/health").then((r) => r.json()).then(setHealth).catch(() => setHealth({})); }, []);
+  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30_000); return () => clearInterval(t); }, []);
 
-  async function logCall(e: React.FormEvent<HTMLFormElement>) {
+  const q = j?.question ?? null;
+  const offV = useCount(q?.off ?? 0.5);
+  const onV = useCount(q?.on ?? 0.5);
+  const open = useMemo(() => (j?.calls ?? []).filter((c) => !c.outcome).sort((a, b) => a.deadline.localeCompare(b.deadline)), [j]);
+  const due = open.filter((c) => !timeLeft(c.deadline));
+  const resolved = useMemo(() => (j?.calls ?? []).filter((c) => c.outcome), [j]);
+  const people = useMemo(() => new Set((j?.calls ?? []).filter((c) => c.origin === "person").map((c) => c.source)), [j]);
+  const originOf = (s: string) => (people.has(s) ? "person" : "strategy");
+
+  async function submitCall(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = e.currentTarget;
-    const body = Object.fromEntries(new FormData(form));
-    setBusy("log");
-    setNotice({ tone: "info", body: "Saving your call to memory. This takes about 20 seconds because it is written to Sui mainnet before the event." });
-    const r = await fetch("/api/call", { method: "POST", body: JSON.stringify(body) });
+    const f = e.currentTarget;
+    setBusy("call");
+    setToast({ tone: "info", body: <>Saving your call to Sui mainnet. It takes about 20 seconds, and after that it can never be edited.</> });
+    const r = await fetch("/api/call", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(f))) });
     const d = await r.json();
     setBusy("");
-    if (!r.ok) return setNotice({ tone: "bad", body: `Could not save the call: ${d.error}` });
-    form.reset();
-    setNotice({
+    if (!r.ok) return setToast({ tone: "bad", body: d.error });
+    setToast({
       tone: "good",
       body: (
         <>
-          <div><b>Saved.</b> Your call is now part of the record and cannot be edited after the fact.</div>
-          <div className="receipts"><span className="muted">Receipt</span> <a className="receipt" href={receiptUrl(d.blobId)} target="_blank" rel="noreferrer">{d.blobId}</a></div>
+          <div><b>Call saved.</b> {d.call.source} says {d.call.asset} will be {d.call.check.type === "price_above" ? "above" : "below"} {usd(d.call.check.usd)} by {when(d.call.deadline)}, with {d.call.confidence}% confidence.</div>
+          <div className="chain"><span className="muted">Receipt</span><a className="rc" href={blobUrl(d.blobId)} target="_blank" rel="noreferrer">{d.blobId}</a></div>
         </>
       ),
     });
-    setTopic(d.call.topic);
-    load(d.call.topic);
+    setAsset(d.call.asset);
+    load(d.call.asset);
   }
 
-  async function resolve(id: string) {
-    setBusy(id);
-    setNotice({ tone: "info", body: "Checking the real outcome with Tatum, then writing the result and the updated trust scores to memory…" });
-    const r = await fetch("/api/resolve", { method: "POST", body: JSON.stringify({ callId: id }) });
-    const d: ResolveResult & { error?: string } = await r.json();
+  async function settle() {
+    setBusy("settle");
+    setToast({ tone: "info", body: <>Checking real prices with Tatum at each deadline, then saving results and updated trust to memory…</> });
+    const r = await fetch("/api/settle", { method: "POST" });
+    const d = await r.json();
     setBusy("");
-    if (!r.ok) return setNotice({ tone: "bad", body: `Could not resolve: ${d.error}` });
-    const moved = d.before.rankOn.join() !== d.after.rankOn.join();
-    setNotice({
+    if (!r.ok) return setToast({ tone: "bad", body: d.error });
+    if (!d.settled) return setToast({ tone: "info", body: "Nothing is due yet." });
+    const moves = Object.keys(d.trustAfter)
+      .map((s) => ({ s, a: d.trustBefore[s] ?? 0, b: d.trustAfter[s] }))
+      .filter((x) => Math.abs(x.b - x.a) >= 0.005)
+      .sort((x, y) => Math.abs(y.b - y.a) - Math.abs(x.b - x.a));
+    setToast({
       tone: "good",
       body: (
         <>
-          <div>
-            Outcome: <span className={"chip " + (d.verdict.result ? "good" : "bad")}>{d.verdict.result ? "Came true" : "Did not happen"}</span>{" "}
-            <span className="muted">{d.verdict.observed}</span>
-          </div>
-          <div className="shift">
-            <div className="box"><b>{pct(d.before.on)}</b><span>answer before this result</span></div>
-            <div className="arrow">→</div>
-            <div className="box"><b>{pct(d.after.on)}</b><span>answer after memory updated</span></div>
-          </div>
-          <div className="muted">{moved ? "The ranking of sources changed because of this result." : "Trust scores updated; the order of sources held."} Without memory the answer would still be {pct(d.after.off)}.</div>
-          <div className="receipts"><span className="muted">Receipts</span>{d.blobs.map((b, i) => b.blobId ? <a key={i} className="receipt" href={receiptUrl(b.blobId)} target="_blank" rel="noreferrer">{short(b.blobId)}</a> : <span key={i} className="chip bad">{b.error}</span>)}</div>
+          <div><b>{d.settled} call{d.settled === 1 ? "" : "s"} settled.</b></div>
+          {d.outcomes.map((o: any, i: number) => (
+            <div key={i}>{o.asset} finished at <b>{usd(o.observedUsd)}</b>, {o.result ? "so the claim came true" : "so the claim did not happen"} ({o.direction} {usd(o.targetUsd)}).</div>
+          ))}
+          {moves.length > 0 && (
+            <div className="chain">
+              <span className="muted">Trust moved</span>
+              {moves.map((m) => <span key={m.s} className={"badge " + (m.b > m.a ? "good" : "bad")}>{m.s} {pct(m.a)} → {pct(m.b)}</span>)}
+            </div>
+          )}
+          <div className="chain"><span className="muted">Receipts</span>{d.receipts.filter((x: any) => x.blobId).map((x: any) => <a key={x.blobId} className="rc" href={blobUrl(x.blobId)} target="_blank" rel="noreferrer">{short(x.blobId)}</a>)}</div>
         </>
       ),
     });
-    load(topic);
+    load(asset);
   }
 
-  const g = j?.guidance;
-  const open = useMemo(() => (j?.calls ?? []).filter((c) => !c.outcome).sort((a, b) => a.deadline.localeCompare(b.deadline)), [j]);
-  const resolved = useMemo(() => (j?.calls ?? []).filter((c) => c.outcome).sort((a, b) => b.deadline.localeCompare(a.deadline)), [j]);
-  const sources = useMemo(() => [...(j?.sources ?? [])].sort((a, b) => b.weight - a.weight), [j]);
-  const question = topic.endsWith("-onchain") ? "Who should I trust on Sui network activity?" : `Who should I trust on the ${topicLabel(topic)}?`;
+  const status = err ? { cls: "off", text: "Memory unreachable" } : j ? { cls: "", text: `${j.memory.stored} records on Sui mainnet` } : { cls: "wait", text: "Recalling memory…" };
 
   return (
     <>
       <header className="topbar">
         <div className="topbar-in">
-          <div className="brand"><i />Proven</div>
+          <Wordmark />
           <nav className="nav">
-            <a href="#ask">Ask</a><a href="#log">Log a call</a><a href="#sources">Sources</a><a href="#journal">Journal</a><a href="#verify">Verification</a>
+            <a href="#ask">Ask</a><a href="#call">Make a call</a><a href="#leaderboard">Leaderboard</a><a href="#journal">Journal</a><a href="#proof">Proof</a>
           </nav>
-          <div className="spacer" />
-          <div className="status">
-            <span className={"dot " + (err ? "bad" : j ? "" : "pending")} />
-            {err ? "Memory unavailable" : j ? `${j.onchainCount} records in memory · Sui mainnet` : "Recalling memory…"}
-          </div>
+          <div className="grow" />
+          <span className="pill"><span className={"dot " + status.cls} /><span>{status.text}</span></span>
         </div>
       </header>
 
       <main>
         <div className="hero">
-          <h1>A prediction journal that learns who is actually right.</h1>
-          <p>Log a call with a confidence number before the event. When it resolves, Proven remembers the outcome and adjusts how much it trusts each source. Ask the same question with memory on and off, and see the difference.</p>
+          <div>
+            <span className="eyebrow">Prediction journal · remembers on Sui</span>
+            <h1>Know who is <em>actually</em> right.</h1>
+            <p className="lead">Everyone sounds sure. Proven keeps score. It records every call before the event, checks it against real prices after, and remembers who was right and how confident they claimed to be. Next time you ask, the answer reflects the record.</p>
+            <div className="cta"><a className="btn" href="#ask">See the answer</a><a className="btn ghost" href="#call">Make a call</a></div>
+          </div>
+          <div className="steps">
+            <div className="step"><span className="k">1</span><div><b>Call it before it happens</b><span>A claim plus a confidence, saved permanently. No editing later.</span></div></div>
+            <div className="step"><span className="k">2</span><div><b>Check it against reality</b><span>At the deadline, the real price decides. No one grades their own work.</span></div></div>
+            <div className="step"><span className="k">3</span><div><b>Trust follows the record</b><span>Sources that are right, and honest about how sure they are, earn more weight.</span></div></div>
+          </div>
         </div>
 
-        <section id="ask">
-          <div className="sec-head">
-            <h2>{question}</h2>
-            <p>Same question, two answers. The only difference is memory.</p>
+        <section id="ask" className="reveal">
+          <div className="head">
+            <div><h2>Ask: who should I trust right now?</h2><p>The same open question, answered twice. On the left, everyone counts the same. On the right, Proven uses what it remembers.</p></div>
+            <div className="tabs" role="tablist">
+              {ASSETS.map((a) => <button key={a} role="tab" aria-selected={asset === a} className="tab" onClick={() => setAsset(a)}>{a}</button>)}
+            </div>
           </div>
           <div className="card">
-            <div className="ask-bar">
-              <label htmlFor="topic">Topic</label>
-              <select id="topic" className="select" value={topic} onChange={(e) => setTopic(e.target.value)}>
-                {(j?.topics ?? [topic]).map((t) => <option key={t} value={t}>{topicLabel(t)}</option>)}
-              </select>
-              {g && g.rows.length > 0 && <span className="muted">{g.rows.length} open call{g.rows.length === 1 ? "" : "s"} on this topic</span>}
-            </div>
-
-            {err && <div className="notice bad">We could not reach the memory layer right now. {err}</div>}
-            {!j && !err && <div className="loading"><div className="skeleton" style={{ width: "40%" }} /><div className="skeleton" style={{ width: "70%" }} /><div className="skeleton" style={{ width: "55%" }} /></div>}
-
-            {g && g.rows.length === 0 && <div className="empty">No open calls on this topic yet. Log one below to get an answer.</div>}
-
-            {g && g.rows.length > 0 && (
+            {err && <div className="toast bad">Memory is unreachable right now. Please try again in a moment.</div>}
+            {!j && !err && <div style={{ display: "grid", gap: 12 }}><div className="sk" style={{ width: "45%" }} /><div className="sk" style={{ width: "80%" }} /><div className="sk" style={{ width: "65%" }} /></div>}
+            {j && !q && <div className="empty">No open calls on {asset} right now. Make one below, and the answer appears here.</div>}
+            {q && (
               <>
-                <div className="grid2">
-                  <div className="answer off">
-                    <div className="label">Without memory</div>
-                    <div className="num">{pct(g.off)}</div>
-                    <div className="how">Every source counts the same. Their stated confidence is taken at face value.</div>
-                    <div className="ranks">
-                      {g.rankOff.map((s, i) => {
-                        const r = g.rows.find((x) => x.source === s)!;
+                <div className="q">Will {q.claim} by {when(q.deadline)}?</div>
+                <div className="q-sub">{q.rows.length} sources have an open call on this. {timeLeft(q.deadline) ? `Decided in ${timeLeft(q.deadline)}.` : "Ready to be decided."}</div>
+                <div className="compare">
+                  <div className="side">
+                    <div className="tag">Without memory</div>
+                    <div className="big tnum">{pct(offV)} <small>likely</small></div>
+                    <div className="expl">Average of what everyone says. The loudest voice counts as much as the most accurate one.</div>
+                    <div className="rows">
+                      {q.rankOff.map((s, i) => {
+                        const r = q.rows.find((x) => x.source === s)!;
                         return (
-                          <div className="rank" key={s}>
+                          <div className="row" key={s}>
                             <span className="n">{i + 1}</span>
-                            <div><div className="name"><Name source={s} /></div><div className="bar"><i style={{ width: `${r.stated * 100}%` }} /></div></div>
-                            <div className="val">says {pct(r.stated)}</div>
+                            <div><div className="who">{s}</div><div className="track"><i style={{ width: `${r.stated * 100}%` }} /></div></div>
+                            <span className="r tnum">says {pct(r.stated)}</span>
                           </div>
                         );
                       })}
                     </div>
                   </div>
-
-                  <div className="answer on">
-                    <div className="label">With memory <span className="chip brand">{j!.kinds.outcome} resolved calls</span></div>
-                    <div className="num">{pct(g.on)} <span className={"move " + (g.on >= g.off ? "up" : "down")}>{g.on >= g.off ? "▲" : "▼"} {Math.abs(Math.round((g.on - g.off) * 100))} pts</span></div>
-                    <div className="how">Sources are weighted by their track record. Each claim is blended with how often that source has actually been right.</div>
-                    <div className="ranks">
-                      {g.rankOn.map((s, i) => {
-                        const r = g.rows.find((x) => x.source === s)!;
-                        const moved = g.rankOff.indexOf(s) - i;
+                  <div className="side on">
+                    <div className="tag">With memory <span className="badge brand">{j!.counts.resolved} past results</span></div>
+                    <div className="big tnum">{pct(onV)} <small>likely</small> <span className={"mv " + (onV >= offV ? "up" : "down")}>{onV >= offV ? "▲" : "▼"} {Math.abs(Math.round((onV - offV) * 100))}</span></div>
+                    <div className="expl">Each source weighted by its record, and each claim corrected by how often that source is really right.</div>
+                    <div className="rows">
+                      {q.rankOn.map((s, i) => {
+                        const r = q.rows.find((x) => x.source === s)!;
+                        const mv = q.rankOff.indexOf(s) - i;
                         return (
-                          <div className="rank" key={s}>
+                          <div className="row" key={s}>
                             <span className="n">{i + 1}</span>
                             <div>
-                              <div className="name"><Name source={s} />{moved !== 0 && <span className={"move " + (moved > 0 ? "up" : "down")}>{moved > 0 ? "▲" : "▼"}{Math.abs(moved)}</span>}</div>
-                              <div className="bar"><i style={{ width: `${r.adjusted * 100}%` }} /></div>
-                              <div className="sub">trust {pct(r.weight)}</div>
+                              <div className="who">{s}{mv !== 0 && <span className={"mv " + (mv > 0 ? "up" : "down")}>{mv > 0 ? "▲" : "▼"}{Math.abs(mv)}</span>}</div>
+                              <div className="track"><i style={{ width: `${Math.max(4, r.weight * 100)}%` }} /></div>
                             </div>
-                            <div className="val">says {pct(r.stated)} → <b>{pct(r.adjusted)}</b></div>
+                            <span className="r tnum">trust {pct(r.weight)}</span>
                           </div>
                         );
                       })}
                     </div>
                   </div>
                 </div>
-                <div className="takeaway">
-                  <b><Name source={g.rankOn[0]} /></b> is the most trusted source on this topic right now.{" "}
-                  {g.rankOn[0] !== g.rankOff[0] && <>Without memory the list would start with <b><Name source={g.rankOff[0]} /></b>.</>}{" "}
-                  Trust comes only from resolved outcomes in memory; nothing here is set by hand.
-                </div>
+                <Verdict q={q} />
               </>
             )}
           </div>
         </section>
 
-        {j && j.curve.points.length > 1 && (
-          <section id="learning">
-            <div className="sec-head">
-              <h2>How trust was learned</h2>
-              <p>Each source's trust after every resolved call, from the first to the latest.</p>
-            </div>
+        {j && j.curve.points.length > 2 && (
+          <section className="reveal">
+            <div className="head"><div><h2>How the trust was learned</h2><p>Everyone starts equal. Each line is a source's share of trust after every round of results.</p></div></div>
             <div className="card"><Curve curve={j.curve} /></div>
           </section>
         )}
 
-        <section id="log">
-          <div className="grid-3-2">
+        <section id="call" className="reveal">
+          <div className="split">
             <div className="card">
-              <div className="sec-head"><h2>Log a call</h2><p>Saved to memory before the event, so it can't be changed later.</p></div>
-              <form className="form" onSubmit={logCall}>
-                <div className="f wide"><label htmlFor="src">Your name or the source</label><input id="src" name="source" placeholder="e.g. Me, or an analyst you follow" defaultValue="Me" /></div>
-                <div className="f"><label htmlFor="sym">Asset</label><select id="sym" name="symbol"><option>SUI</option><option>SOL</option><option>BTC</option><option>ETH</option></select></div>
-                <div className="f"><label htmlFor="dir">Will be</label><select id="dir" name="direction"><option value="above">above</option><option value="below">below</option></select></div>
-                <div className="f"><label htmlFor="usd">Price (USD)</label><input id="usd" name="usd" type="number" step="any" min="0" required placeholder="0.85" /></div>
-                <div className="f"><label htmlFor="hrs">In (hours)</label><input id="hrs" name="hours" type="number" step="any" min="0.1" max="720" defaultValue={1} /></div>
-                <div className="f wide"><label htmlFor="conf">How confident are you? (%)</label><input id="conf" name="confidence" type="number" min={0} max={100} defaultValue={70} /></div>
-                <div className="hint">Prices are checked against Tatum's market rate at the deadline. Be honest with the percentage: that's what Proven scores you on.</div>
-                <div className="actions">
-                  <button className="btn" disabled={!!busy}>{busy === "log" ? "Saving to memory…" : "Save call"}</button>
+              <div className="head" style={{ marginBottom: 12 }}><div><h2>Make a call</h2><p>Your call is saved before the deadline and checked against the real price after it.</p></div></div>
+              <form className="form" onSubmit={submitCall}>
+                <div className="field w2"><label htmlFor="f-src">Name</label><input id="f-src" name="source" required maxLength={40} placeholder="Your name" /></div>
+                <div className="field"><label htmlFor="f-asset">Asset</label><select id="f-asset" name="asset" defaultValue={asset}>{ASSETS.map((a) => <option key={a}>{a}</option>)}</select></div>
+                <div className="field"><label htmlFor="f-dir">Will be</label><select id="f-dir" name="direction"><option value="above">Above</option><option value="below">Below</option></select></div>
+                <div className="field w2"><label htmlFor="f-usd">Price in USD</label><input id="f-usd" name="usd" type="number" step="any" min="0" required inputMode="decimal" placeholder="Target price" /></div>
+                <div className="field w2"><label htmlFor="f-h">Deadline</label>
+                  <select id="f-h" name="hours" defaultValue="4"><option value="1">In 1 hour</option><option value="4">In 4 hours</option><option value="24">In 1 day</option><option value="168">In 1 week</option></select>
                 </div>
+                <div className="field w4"><label htmlFor="f-conf">How sure are you?</label>
+                  <div className="range"><input id="f-conf" name="confidence" type="range" min={1} max={99} value={conf} onChange={(e) => setConf(Number(e.target.value))} /><output className="tnum">{conf}%</output></div>
+                </div>
+                <div className="help">Proven scores honesty as much as being right. Saying 95% and missing costs more than saying 60% and missing.</div>
+                <div><button className="btn" disabled={!!busy}>{busy === "call" ? <><span className="spin" />Saving…</> : "Save my call"}</button></div>
               </form>
             </div>
 
             <div className="card">
-              <div className="sec-head"><h2>Open calls</h2><p>Resolve once the deadline has passed.</p></div>
-              {j && open.length === 0 && <div className="empty">Nothing open right now.</div>}
+              <div className="head" style={{ marginBottom: 12 }}>
+                <div><h2>Waiting for results</h2><p>{open.length ? `${open.length} open call${open.length === 1 ? "" : "s"}.` : "Nothing open."} {due.length ? `${due.length} ready to check.` : ""}</p></div>
+                <button className="btn sm" onClick={settle} disabled={!!busy || !due.length}>{busy === "settle" ? <><span className="spin" />Checking…</> : due.length ? "Check results" : "Nothing due"}</button>
+              </div>
               <div className="list">
-                {open.map((c) => {
-                  const due = Date.parse(c.deadline) <= Date.now();
-                  return (
-                    <div className="item" key={c.id}>
-                      <div>
-                        <div className="t"><Name source={c.source} /> · {c.confidence}% · {c.claim.replace(" (Tatum rate) at the deadline", "")}</div>
-                        <div className="s">{new Date(c.deadline).toUTCString().replace(" GMT", " UTC")} · {untilText(c.deadline)}</div>
-                      </div>
-                      <button className="btn sm secondary" disabled={!due || !!busy} onClick={() => resolve(c.id)}>{busy === c.id ? "Resolving…" : due ? "Resolve" : "Waiting"}</button>
-                    </div>
-                  );
-                })}
+                {open.slice(0, 8).map((c) => (
+                  <div className="li" key={c.id}>
+                    <div><div className="t">{c.source} <Kind origin={c.origin} /></div><div className="s">{c.claim} · {c.confidence}% sure</div></div>
+                    <span className={"badge " + (timeLeft(c.deadline) ? "" : "good")}>{timeLeft(c.deadline) ?? "Ready"}</span>
+                  </div>
+                ))}
+                {open.length > 8 && <div className="muted">and {open.length - 8} more</div>}
               </div>
             </div>
           </div>
-          {notice && <div className={"notice " + (notice.tone === "info" ? "" : notice.tone)}>{notice.body}</div>}
+          {toast && <div className={"toast " + (toast.tone === "info" ? "" : toast.tone)}>{toast.body}</div>}
         </section>
 
-        <section id="sources">
-          <div className="sec-head"><h2>Sources</h2><p>Ranked by trust. Trust is recomputed from memory on every visit.</p></div>
-          <div className="card scroll">
-            <table>
-              <thead><tr><th>Source</th><th>Resolved calls</th><th>Accuracy</th><th>Average confidence</th><th>Verdict</th><th>Trust</th></tr></thead>
-              <tbody>
-                {sources.map((s) => {
-                  const gap = s.avgConfidence - s.hitRate;
-                  const verdict = s.resolved < 3 ? "Not enough history" : gap > 0.15 ? "Overconfident" : gap < -0.1 ? "Underrates themself" : "Well calibrated";
-                  const tone = s.resolved < 3 ? "" : gap > 0.15 ? "bad" : gap < -0.1 ? "warn" : "good";
-                  return (
-                    <tr key={s.source}>
-                      <td><span className="name" style={{ display: "inline-flex", gap: 8, alignItems: "center", fontWeight: 600 }}><Name source={s.source} /></span></td>
-                      <td className="num">{s.resolved}{s.open ? <span className="muted"> · {s.open} open</span> : null}</td>
-                      <td className="num">{s.resolved ? pct(s.hitRate) : "—"}</td>
-                      <td className="num">{s.resolved ? pct(s.avgConfidence) : "—"}</td>
-                      <td><span className={"chip " + tone}>{verdict}</span></td>
-                      <td className="num"><b>{pct(s.weight)}</b></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <section id="leaderboard" className="reveal">
+          <div className="head"><div><h2>Leaderboard</h2><p>Ranked by trust, rebuilt from memory on every visit. Calibration means saying 70% and being right about 70% of the time.</p></div></div>
+          <div className="board">
+            {(j?.sources ?? []).map((s, i) => {
+              const gap = s.avgConfidence - s.hitRate;
+              const v = s.resolved < 3 ? ["", "New"] : gap > 0.12 ? ["bad", "Overconfident"] : gap < -0.12 ? ["warn", "Too modest"] : ["good", "Calibrated"];
+              return (
+                <div className="lb" key={s.source}>
+                  <span className="pos">{i + 1}</span>
+                  <div><div className="nm">{s.source} <Kind origin={s.origin} /> <span className={"badge " + v[0]}>{v[1]}</span></div>{s.rule && <div className="rule">{s.rule}</div>}</div>
+                  <div className="facts">{s.resolved ? <>Right {pct(s.hitRate)} of the time<br />Claims {pct(s.avgConfidence)} on average</> : "No results yet"}</div>
+                  <div className="trust"><b className="tnum">{pct(s.weight)}</b><span>trust</span></div>
+                </div>
+              );
+            })}
+            {!j && <div className="card"><div className="sk" style={{ width: "60%" }} /></div>}
           </div>
         </section>
 
-        <section id="journal">
-          <div className="sec-head"><h2>Journal</h2><p>Every call and every outcome, with a receipt you can open.</p></div>
+        <section id="journal" className="reveal">
+          <div className="head"><div><h2>Journal</h2><p>Every settled call, the real price that decided it, and a receipt for each.</p></div></div>
           <div className="card scroll">
             <table>
-              <thead><tr><th>Source</th><th>Call</th><th>Confidence</th><th>Outcome</th><th>Receipts</th></tr></thead>
+              <thead><tr><th>Who</th><th>Call</th><th>Sure</th><th>Result</th><th>Receipts</th></tr></thead>
               <tbody>
-                {(showAll ? resolved : resolved.slice(0, 8)).map((c) => (
+                {(allRows ? resolved : resolved.slice(0, 10)).map((c) => (
                   <tr key={c.id}>
-                    <td><span style={{ display: "inline-flex", gap: 8, alignItems: "center", fontWeight: 600 }}><Name source={c.source} /></span></td>
-                    <td>{c.claim}<div className="muted">{new Date(c.deadline).toUTCString().replace(" GMT", " UTC")}</div></td>
-                    <td className="num">{c.confidence}%</td>
+                    <td><b>{c.source}</b></td>
+                    <td>{c.claim}<div className="muted">{when(c.deadline)}</div></td>
+                    <td className="tnum">{c.confidence}%</td>
+                    <td><span className={"badge " + (c.outcome!.result ? "good" : "bad")}>{c.outcome!.result ? "Came true" : "Missed"}</span><div className="muted">closed at {usd(c.outcome!.observedUsd)}</div></td>
                     <td>
-                      <span className={"chip " + (c.outcome!.result ? "good" : "bad")}>{c.outcome!.result ? "Came true" : "Did not happen"}</span>
-                      <div className="muted">{c.outcome!.observed.split(" via ")[0]}</div>
-                      <div className="muted">Checked via {c.outcome!.evidence === "tatum-price" ? "Tatum market data" : c.outcome!.evidence === "tatum-sui-grpc" ? "Tatum Sui gateway" : "Sui public node"}</div>
-                    </td>
-                    <td>
-                      {c.callBlob && <div><a className="receipt" href={receiptUrl(c.callBlob)} target="_blank" rel="noreferrer">call {short(c.callBlob)}</a></div>}
-                      {c.outcome?.blob && <div style={{ marginTop: 4 }}><a className="receipt" href={receiptUrl(c.outcome.blob)} target="_blank" rel="noreferrer">result {short(c.outcome.blob)}</a></div>}
+                      <div className="chain">
+                        {c.receipt && <a className="rc" href={blobUrl(c.receipt)} target="_blank" rel="noreferrer">call {short(c.receipt)}</a>}
+                        {c.outcome!.receipt && <a className="rc" href={blobUrl(c.outcome!.receipt)} target="_blank" rel="noreferrer">result {short(c.outcome!.receipt)}</a>}
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {j && resolved.length === 0 && <div className="empty">No resolved calls yet.</div>}
-            {resolved.length > 8 && <div style={{ marginTop: 12 }}><button className="btn sm secondary" onClick={() => setShowAll(!showAll)}>{showAll ? "Show fewer" : `Show all ${resolved.length} resolved calls`}</button></div>}
+            {j && !resolved.length && <div className="empty">No settled calls yet.</div>}
+            {resolved.length > 10 && <div style={{ marginTop: 14 }}><button className="btn ghost sm" onClick={() => setAllRows(!allRows)}>{allRows ? "Show fewer" : `Show all ${resolved.length}`}</button></div>}
           </div>
-          <p className="muted" style={{ marginTop: 10 }}>
-            Sources marked <span className="chip demo">demo</span> are simulated forecasters used to show the learning loop. They are not real people. Their calls about Sui network activity were added after the fact and scored against real chain data, so the learning is real but those were not predictions made in advance. Calls you log yourself are real and are saved before the event.
+        </section>
+
+        <section id="proof" className="reveal">
+          <div className="head"><div><h2>Proof</h2><p>Nothing here lives in a private database. The page you are reading was rebuilt from records on Sui mainnet a moment ago.</p></div></div>
+          <div className="stats">
+            <div className="stat"><b className="tnum">{j?.memory.stored ?? "—"}</b><span>records stored in Walrus Memory</span></div>
+            <div className="stat"><b className="tnum">{j?.memory.recalled ?? "—"}</b><span>recalled to build this page{j?.memory.complete ? " (all of them)" : ""}</span></div>
+            <div className="stat"><b className="tnum">{j?.counts.resolved ?? "—"}</b><span>calls settled by real prices</span></div>
+            <div className="stat"><b className="tnum">{j?.sources.length ?? "—"}</b><span>sources being scored</span></div>
+          </div>
+          <div className="integr">
+            <Integration name="Walrus Memory" ok={health?.walrusRelayer === "ok"} detail="Stores every call, result and trust update" loading={!health} />
+            <Integration name="Tatum market data" ok={!!health?.tatumPrice?.startsWith("ok")} detail="Prices at each deadline decide outcomes" loading={!health} />
+            <Integration name="Tatum Sui gateway" ok={!!health?.tatumSuiGrpc?.startsWith("ok")} detail="Anchors every result to a Sui checkpoint" loading={!health} />
+          </div>
+          <p className="muted" style={{ marginTop: 14 }}>
+            Memory account {j?.memory.account ? <a href={`https://suiscan.xyz/mainnet/object/${j.memory.account}`} target="_blank" rel="noreferrer">{short(j.memory.account)}</a> : "—"}. Receipts open the stored record on Walrus. Records are encrypted, so a receipt proves when a call was written and that it was never changed; Proven decrypts them with its own key to rebuild this page. Strategies are simple published rules that only see prices from before their call.
           </p>
         </section>
 
-        <section id="verify">
-          <div className="sec-head"><h2>Verification</h2><p>Memory is the source of truth. There is no local database.</p></div>
-          <div className="proof">
-            <div className="stat"><b>{j?.onchainCount ?? "—"}</b><span>records stored on Sui mainnet (Walrus Memory)</span></div>
-            <div className="stat"><b>{j?.recalledCount ?? "—"}</b><span>records recalled to build this page {j && j.recalledCount === j.onchainCount ? "· complete" : ""}</span></div>
-            <div className="stat"><b>{j?.kinds.outcome ?? "—"}</b><span>outcomes checked against real data</span></div>
-            <div className="stat"><b>{j ? j.sources.length : "—"}</b><span>sources being scored</span></div>
-          </div>
-          <p className="muted" style={{ marginTop: 12 }}>
-            Memory account {ACCOUNT ? <a href={`https://suiscan.xyz/mainnet/object/${ACCOUNT}`} target="_blank" rel="noreferrer">{short(ACCOUNT)}</a> : "—"} on Sui mainnet. Each receipt opens the stored record on Walrus. Records are encrypted, so the link proves the record exists and when it was written; Proven decrypts them with its own key when it rebuilds the page. Prices and chain data come from Tatum. <a href="/api/health" target="_blank" rel="noreferrer">Live integration status</a>.
-          </p>
-        </section>
-
-        <div className="foot">Proven · Built for the Walrus × Tatum Total Recall hackathon · <a href="https://github.com/datwebguy/proven" target="_blank" rel="noreferrer">Source code</a></div>
+        <footer>
+          <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><Logo size={18} /> Proven</span>
+          <span>Memory by Walrus · Data by Tatum · <a href="https://github.com/datwebguy/proven" target="_blank" rel="noreferrer">Source</a></span>
+        </footer>
       </main>
     </>
   );
 }
 
+function Verdict({ q }: { q: NonNullable<Journal["question"]> }) {
+  const top = q.rankOn[0];
+  const loud = q.rankOff[0];
+  const lean = q.on >= 0.5 ? "likely" : "unlikely";
+  return (
+    <div className="verdict">
+      Proven's answer: <b>{lean}, {pct(q.on >= 0.5 ? q.on : 1 - q.on)}</b>. Listen to <b>{top}</b> most.
+      {loud !== top && <> The most confident voice, <b>{loud}</b>, has not earned that confidence.</>}
+    </div>
+  );
+}
+
+function Integration({ name, ok, detail, loading }: { name: string; ok: boolean; detail: string; loading: boolean }) {
+  return (
+    <div className="stat">
+      <b><span className={"dot " + (loading ? "wait" : ok ? "" : "off")} />{name}</b>
+      <span>{loading ? "Checking…" : ok ? detail : "Not reachable right now"}</span>
+    </div>
+  );
+}
+
 function Curve({ curve }: { curve: Journal["curve"] }) {
-  const W = 960, H = 220, P = 32;
+  const W = 960, H = 240, P = 36;
   const n = curve.points.length - 1;
   const max = Math.max(0.05, ...curve.points.flatMap((p) => Object.values(p.weights)));
   const x = (i: number) => P + (i / Math.max(1, n)) * (W - 2 * P);
   const y = (v: number) => H - P - (v / max) * (H - 2 * P);
   return (
-    <div className="scroll">
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Trust per source over resolved calls">
-        {[0.25, 0.5, 0.75, 1].map((f) => <line key={f} x1={P} y1={y(max * f)} x2={W - P} y2={y(max * f)} stroke="#eef0f5" />)}
-        <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="#d6dae6" />
-        {curve.sources.map((s, k) => (
-          <polyline key={s} fill="none" stroke={COLORS[k % COLORS.length]} strokeWidth={2.5} strokeLinejoin="round"
-            points={curve.points.map((p, i) => `${x(i)},${y(p.weights[s] ?? 0)}`).join(" ")} />
+    <div className="scroll curve">
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Trust per source after each round of results" style={{ minWidth: 520 }}>
+        {[0.25, 0.5, 0.75, 1].map((f) => (
+          <g key={f}>
+            <line x1={P} y1={y(max * f)} x2={W - P} y2={y(max * f)} stroke="#eef1f6" />
+            <text x={P - 8} y={y(max * f) + 4} fill="#8090a8" fontSize="11" textAnchor="end">{Math.round(max * f * 100)}%</text>
+          </g>
         ))}
-        <text x={P} y={16} fill="#7c8aa5" fontSize="12">trust (share of total)</text>
-        <text x={W - P} y={H - 10} fill="#7c8aa5" fontSize="12" textAnchor="end">resolved calls →</text>
+        <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="#d5d9e4" />
+        <text x={P} y={H - 12} fill="#8090a8" fontSize="11">start: everyone equal</text>
+        <text x={W - P} y={H - 12} fill="#8090a8" fontSize="11" textAnchor="end">latest results</text>
+        {curve.sources.map((s, k) => (
+          <path key={s} className="line" fill="none" stroke={COLORS[k % COLORS.length]} strokeWidth={2.75} strokeLinejoin="round" strokeLinecap="round"
+            d={curve.points.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.weights[s] ?? 0)}`).join(" ")} />
+        ))}
       </svg>
-      <div className="legend">{curve.sources.map((s, k) => <span key={s}><i style={{ background: COLORS[k % COLORS.length] }} /><Name source={s} /></span>)}</div>
+      <div className="legend">{curve.sources.map((s, k) => <span key={s}><i style={{ background: COLORS[k % COLORS.length] }} />{s}</span>)}</div>
     </div>
   );
 }

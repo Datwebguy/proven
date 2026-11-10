@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { latestCheckpoint, tatumLatestCheckpoint } from "@/lib/chain";
 import { mem } from "@/lib/memory";
-import { spotUsd } from "@/lib/tatum";
+import { spot } from "@/lib/tatum";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export async function GET() {
   }
 
   try {
-    out.tatumPrice = `ok: SUI/USD ${(await spotUsd("SUI")).usd}`;
+    out.tatumPrice = `ok: SUI/USD ${(await spot("SUI")).usd}`;
   } catch (e) {
     out.tatumPrice = msg(e);
   }

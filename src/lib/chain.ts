@@ -4,16 +4,17 @@ import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { readFileSync } from "node:fs";
 
 /**
- * Sui reads over gRPC (public JSON-RPC is deprecated).
- * Tatum's gateway speaks native gRPC (HTTP/2) and takes the key as `x-api-key` metadata, so it is
- * reached with grpc-js. If Tatum rejects or is unreachable we fall back to a public fullnode and the
- * result says which one answered, so every outcome's evidence label is truthful.
+ * Sui mainnet reads over gRPC. Tatum's gateway speaks native gRPC (HTTP/2) and takes the API key
+ * as `x-api-key` metadata. If it is unreachable we fall back to a public fullnode, and the caller is
+ * told which one answered, so labels are always truthful.
  */
-const TATUM_HOST = (process.env.TATUM_SUI_GRPC_URL ?? "https://sui-mainnet-grpc.gateway.tatum.io").replace(/^https?:\/\//, "");
+export type ChainSource = "tatum-sui-grpc" | "sui-fullnode-grpc";
+
+const TATUM_HOST = (process.env.TATUM_SUI_GRPC_URL ?? "sui-mainnet-grpc.gateway.tatum.io").replace(/^https?:\/\//, "");
 const FULLNODE = "https://fullnode.mainnet.sui.io:443";
 
-function tatumClient(): SuiGrpcClient {
-  const ca = process.env.GRPC_CA_BUNDLE ? readFileSync(process.env.GRPC_CA_BUNDLE) : undefined; // sandbox proxy only
+function tatum(): SuiGrpcClient {
+  const ca = process.env.GRPC_CA_BUNDLE ? readFileSync(process.env.GRPC_CA_BUNDLE) : undefined;
   const transport = new GrpcTransport({
     host: TATUM_HOST.includes(":") ? TATUM_HOST : `${TATUM_HOST}:443`,
     channelCredentials: ChannelCredentials.createSsl(ca),
@@ -21,51 +22,24 @@ function tatumClient(): SuiGrpcClient {
   });
   return new SuiGrpcClient({ network: "mainnet", transport });
 }
+const fullnode = () => new SuiGrpcClient({ network: "mainnet", baseUrl: FULLNODE });
 
-const providers = () => [
-  { name: "tatum-sui-grpc" as const, client: tatumClient() },
-  { name: "sui-fullnode-grpc" as const, client: new SuiGrpcClient({ network: "mainnet", baseUrl: FULLNODE }) },
-];
-export type ChainSource = "tatum-sui-grpc" | "sui-fullnode-grpc";
-
-const mask = { paths: ["sequence_number", "summary.total_network_transactions", "summary.timestamp"] };
-const cp = (c: any, n?: bigint) =>
-  c.ledgerService
-    .getCheckpoint({ checkpointId: n === undefined ? { oneofKind: undefined } : { oneofKind: "sequenceNumber", sequenceNumber: n }, readMask: mask })
-    .then((r: any) => r.response.checkpoint);
-
-/** Ask Tatum only (no fallback). Used by /api/health so the real answer is visible. */
-export async function tatumLatestCheckpoint(): Promise<number> {
-  return Number((await cp(tatumClient())).sequenceNumber);
+async function head(client: SuiGrpcClient) {
+  const r: any = await (client as any).ledgerService.getCheckpoint({
+    checkpointId: { oneofKind: undefined },
+    readMask: { paths: ["sequence_number", "summary.timestamp"] },
+  });
+  const c = r.response.checkpoint;
+  return { seq: Number(c.sequenceNumber), timestampMs: Number(c.summary?.timestamp?.seconds ?? 0) * 1000 };
 }
+
+/** Tatum only, no fallback: used by the health check so the real answer is visible. */
+export const tatumLatestCheckpoint = async () => (await head(tatum())).seq;
 
 export async function latestCheckpoint(): Promise<{ seq: number; timestampMs: number; source: ChainSource }> {
-  let last: unknown;
-  for (const p of providers()) {
-    try {
-      const c = await cp(p.client);
-      return { seq: Number(c.sequenceNumber), timestampMs: Number(c.summary.timestamp.seconds) * 1000, source: p.name };
-    } catch (e) {
-      last = e;
-    }
+  try {
+    return { ...(await head(tatum())), source: "tatum-sui-grpc" };
+  } catch {
+    return { ...(await head(fullnode())), source: "sui-fullnode-grpc" };
   }
-  throw last;
-}
-
-/** Transactions in a single checkpoint = delta of the network's cumulative tx counter. */
-export async function checkpointTxCount(seq: number): Promise<{ txs: number; timestampMs: number; source: ChainSource }> {
-  let last: unknown;
-  for (const p of providers()) {
-    try {
-      const [a, b] = await Promise.all([cp(p.client, BigInt(seq)), cp(p.client, BigInt(seq - 1))]);
-      return {
-        txs: Number(a.summary.totalNetworkTransactions) - Number(b.summary.totalNetworkTransactions),
-        timestampMs: Number(a.summary.timestamp.seconds) * 1000,
-        source: p.name,
-      };
-    } catch (e) {
-      last = e;
-    }
-  }
-  throw last;
 }

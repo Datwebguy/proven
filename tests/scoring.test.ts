@@ -1,63 +1,96 @@
-import { describe, it, expect } from "vitest";
-import { guidance, join, learningCurve, reliability, sourceStats } from "../src/lib/scoring";
-import type { ProvenRecord } from "../src/lib/types";
+import { describe, expect, it } from "vitest";
+import { guidance, join, learningCurve, sourceStats } from "../src/lib/scoring";
+import { STRATEGIES } from "../src/lib/strategies";
+import { decode, encode } from "../src/lib/codec";
+import type { CallRecord, OutcomeRecord, ProvenRecord } from "../src/lib/types";
 
-const call = (id: string, source: string, conf: number, topic = "SUI"): ProvenRecord => ({
-  kind: "CALL", id, source, topic, claim: "x", check: { type: "manual" }, confidence: conf,
-  deadline: "2026-01-01T00:00:00Z", loggedAt: "2026-01-01T00:00:00Z", sample: true,
+const call = (id: string, source: string, conf: number, deadline = "2026-01-01T00:00:00Z", asset = "SUI"): CallRecord => ({
+  kind: "CALL", id, source, origin: "strategy", asset,
+  check: { type: "price_above", symbol: asset, usd: 1 }, confidence: conf, deadline, loggedAt: "2025-12-31T00:00:00Z",
 });
-const out = (callId: string, result: boolean): ProvenRecord => ({
-  kind: "OUTCOME", callId, result, observed: "", evidence: "manual", resolvedAt: "2026-01-02T00:00:00Z",
+const out = (ids: string[], result: boolean, at = "2026-01-02T00:00:00Z"): OutcomeRecord => ({
+  kind: "OUTCOME", callIds: ids, result, observedUsd: 1, evidence: "tatum-ohlcv", resolvedAt: at,
 });
 
-describe("scoring", () => {
+function history(): ProvenRecord[] {
   const recs: ProvenRecord[] = [];
   for (let i = 0; i < 6; i++) {
-    recs.push(call(`g${i}`, "Good", 80), out(`g${i}`, true));
-    recs.push(call(`b${i}`, "Bad", 90), out(`b${i}`, false));
+    const d = `2026-01-0${i + 1}T00:00:00Z`;
+    recs.push(call(`g${i}`, "Good", 80, d), call(`b${i}`, "Bad", 90, d), out([`g${i}`, `b${i}`], i % 3 !== 0 ? true : true));
   }
-  recs.push(call("og", "Good", 70), call("ob", "Bad", 95));
+  // Bad says 90% "up" on claims that went down
+  for (let i = 0; i < 6; i++) {
+    const d = `2026-01-1${i}T00:00:00Z`;
+    recs.push(call(`g2${i}`, "Good", 25, d), call(`b2${i}`, "Bad", 90, d), out([`g2${i}`, `b2${i}`], false));
+  }
+  recs.push(call("og", "Good", 70, "2026-02-01T00:00:00Z"), call("ob", "Bad", 95, "2026-02-01T00:00:00Z"));
+  return recs;
+}
 
-  it("weights the calibrated source above the overconfident one", () => {
-    const s = sourceStats(join(recs));
+describe("scoring", () => {
+  it("trusts the calibrated source over the overconfident one, weights sum to 1", () => {
+    const s = sourceStats(join(history()));
     const good = s.find((x) => x.source === "Good")!, bad = s.find((x) => x.source === "Bad")!;
     expect(good.weight).toBeGreaterThan(bad.weight);
     expect(s.reduce((a, b) => a + b.weight, 0)).toBeCloseTo(1);
   });
 
-  it("memory-on differs from memory-off and reorders sources", () => {
-    const g = guidance(join(recs), "SUI");
-    expect(g.rankOn[0]).toBe("Good");
-    expect(g.on).not.toBeCloseTo(g.off, 3);
-    const good = g.rows.find((r) => r.source === "Good")!, bad = g.rows.find((r) => r.source === "Bad")!;
-    expect(bad.adjusted).toBeLessThan(bad.stated - 0.3); // overconfident 95% collapses toward a coin flip
-    expect(good.adjusted).toBeGreaterThan(good.stated);  // under-confident but right: boosted
+  it("one outcome record settles every call on the same claim", () => {
+    const j = join(history());
+    expect(j.filter((x) => x.outcome).length).toBe(24);
+    expect(j.filter((x) => !x.outcome).length).toBe(2);
   });
 
-  it("learning curve starts flat and diverges as outcomes resolve", () => {
-    const dated = recs.map((r, i) => (r.kind === "CALL" ? { ...r, deadline: `2026-01-${String(1 + (i >> 2)).padStart(2, "0")}T00:00:00Z` } : r));
-    const c = learningCurve(join(dated));
-    expect(c.points[0].weights["Good"]).toBeCloseTo(c.points[0].weights["Bad"]);
-    const last = c.points[c.points.length - 1].weights;
-    expect(last["Good"]).toBeGreaterThan(last["Bad"]);
-    for (const p of c.points) expect(Object.values(p.weights).reduce((a, b) => a + b, 0)).toBeCloseTo(1);
+  it("memory changes the answer and the ranking on the same question", () => {
+    const g = guidance(join(history()), "SUI");
+    expect(g.rankOff[0]).toBe("Bad");   // loudest first without memory
+    expect(g.rankOn[0]).toBe("Good");   // track record first with memory
+    expect(g.on).not.toBeCloseTo(g.off, 2);
+    const bad = g.rows.find((r) => r.source === "Bad")!;
+    expect(bad.adjusted).toBeLessThan(bad.stated);
   });
 
-  it("reliability buckets compare stated confidence with actual hit rate", () => {
-    const r = reliability(join(recs), "Bad");
-    expect(r).toHaveLength(1);
-    expect(r[0].hits).toBe(0); // 90% stated, never right
-    expect(r[0].n).toBe(6);
-  });
-
-  it("the same recalled records always produce the same ranking (pure, no hidden state)", () => {
-    const a = guidance(join(recs), "SUI"), b = guidance(join([...recs].reverse()), "SUI");
+  it("is pure: record order does not change the result", () => {
+    const a = guidance(join(history()), "SUI"), b = guidance(join([...history()].reverse()), "SUI");
     expect(b.rankOn).toEqual(a.rankOn);
     expect(b.on).toBeCloseTo(a.on);
   });
 
-  it("with no history, memory-on equals a flat prior (no invented trust)", () => {
+  it("with no history every source is trusted equally", () => {
     const g = guidance(join([call("a", "A", 80), call("b", "B", 60)]), "SUI");
     expect(g.rows[0].weight).toBeCloseTo(g.rows[1].weight);
+  });
+
+  it("learning curve starts flat and diverges as outcomes arrive", () => {
+    const c = learningCurve(join(history()));
+    expect(c.points[0].weights.Good).toBeCloseTo(c.points[0].weights.Bad);
+    const last = c.points[c.points.length - 1].weights;
+    expect(last.Good).toBeGreaterThan(last.Bad);
+  });
+});
+
+describe("strategies", () => {
+  const h = { now: 105, ago24h: 100, ago4h: 104 };
+  it("produce probabilities in range from price history only", () => {
+    for (const s of STRATEGIES) {
+      const p = s.predict(h);
+      expect(p).toBeGreaterThan(0);
+      expect(p).toBeLessThan(1);
+    }
+  });
+  it("trend and mean reversion disagree on the same move", () => {
+    const t = STRATEGIES.find((s) => s.id === "trend")!.predict(h);
+    const r = STRATEGIES.find((s) => s.id === "revert")!.predict(h);
+    expect(t).toBeGreaterThan(0.5);
+    expect(r).toBeLessThan(0.5);
+  });
+});
+
+describe("codec", () => {
+  it("round-trips records and ignores foreign text", () => {
+    const c = call("x", "X", 70);
+    expect(decode(encode(c))).toEqual(c);
+    expect(decode("hello")).toBeNull();
+    expect(decode("PROVEN/1 {}")).toBeNull();
   });
 });

@@ -1,0 +1,17 @@
+name: Learning loop
+# Every hour: settle calls whose deadline has passed, then open a new strategy round where none is open.
+# Both endpoints are idempotent, so a missed or repeated run does no harm.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    env:
+      SITE: ${{ vars.PROVEN_URL || 'https://proven-ten.vercel.app' }}
+    steps:
+      - name: Settle due calls
+        run: curl -fsS -X POST "$SITE/api/settle" --max-time 70 | head -c 2000
+      - name: Open a new round
+        run: curl -fsS -X POST "$SITE/api/round" --max-time 70 | head -c 2000
