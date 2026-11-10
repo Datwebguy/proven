@@ -1,92 +1,119 @@
-# Proven
+<p align="center">
+  <img src="docs/logo.svg" width="72" alt="Proven logo" />
+</p>
+<h1 align="center">Proven</h1>
+<p align="center"><b>Know who is actually right.</b><br/>A prediction journal that remembers every call on Sui mainnet and learns whom to trust.</p>
+<p align="center">
+  <a href="https://proven-ten.vercel.app"><b>Live app</b></a> ·
+  <a href="EVIDENCE.md">Mainnet evidence</a> ·
+  <a href="https://proven-ten.vercel.app/api/health">Live status</a>
+</p>
 
-**A prediction journal that learns who is actually right.**
+<p align="center"><img src="docs/screenshot.png" alt="Proven: the same question answered without and with memory" width="900"/></p>
 
-You log a call with a confidence number *before* the event. When it resolves, Proven writes the
-outcome and the updated calibration to **Walrus Memory on Sui mainnet**. The next time you ask
-"who should I trust on this?", the ranking and the blended answer are rebuilt from those
-memories, so the same question gives a different result with memory on than with memory off.
+## What it does
 
-Built for the Walrus × Tatum **Total Recall** hackathon (track: Markets & Sports Prediction).
+Everyone who makes market calls sounds sure. Proven keeps score.
 
-## The loop
+1. **Call it before it happens.** A source states a claim and a confidence ("SUI above $0.85 by 10:35, 80% sure"). The call is written to **Walrus Memory on Sui mainnet** before the deadline. Its blob ID is the receipt; it can't be edited later.
+2. **Check it against reality.** At the deadline, **Tatum's historical price data** decides the outcome at that exact minute. The result is written back to memory and anchored to a Sui checkpoint read through **Tatum's Sui gateway**.
+3. **Trust follows the record.** Proven scores every source on accuracy *and* honesty (a Brier score: claiming 90% and missing costs far more than claiming 60% and missing). The next time you ask, the answer is weighted by that record.
 
-1. **Log** a call: source, claim, confidence (0–100), deadline. It is written to Walrus Memory
-   (`rememberAndWait` returns a real mainnet **blob ID**, shown in the ledger).
-2. **Resolve** after the deadline with real data: Tatum Data API prices, or Sui checkpoint data
-   read over gRPC (Tatum's Sui gateway first, public fullnode as a labelled fallback).
-3. **Write back** the outcome and refreshed calibration snapshots to Walrus Memory.
-4. **Ask**: the screen shows the same question twice.
-   - **Memory off**: every source counts equally, stated confidence taken at face value.
-   - **Memory on**: sources weighted by their recalled track record; each source's stated
-     confidence is blended with what it actually achieves.
-5. **Reload anywhere**: nothing is cached locally. On every load the server calls
-   `listMemories` (exact on-chain count) and `recall`, decodes the records, and recomputes all
-   scores. The UI shows recalled count vs. on-chain count so you can see they match.
+The main screen asks one question two ways. **Without memory**, every source counts the same and the loudest claim wins. **With memory**, sources are weighted by what Proven remembers, and the answer and the ranking change.
 
-## How scoring works (`src/lib/scoring.ts`)
+## Where the data comes from
 
-- Per source: Brier score over resolved calls, shrunk toward a coin flip with `K = 3` prior
-  calls, so one lucky call cannot put a source on top.
-- Trust weight ∝ improvement over a coin flip (normalised across sources, never zero).
-- Memory-on confidence per source: `(n·hitRate + K·statedSideConfidence) / (n + K)`; the more
-  resolved evidence, the more the track record outweighs the claim.
-- Guidance = trust-weighted mean of those adjusted confidences. Nothing is hardcoded; the
-  ranking is a pure function of recalled records (see `tests/scoring.test.ts`).
+There is no seeded or invented data. Two kinds of sources make calls:
 
-## What is stored on Walrus
+| Source | How it calls |
+|---|---|
+| **Trend Follower** | Bets the last 24 hours' move continues. Bigger move, more confident. |
+| **Mean Reverter** | Bets the last 24 hours' move snaps back. |
+| **Momentum 4h** | Follows the last 4 hours. Never above 75%. |
+| **Perma-Bull** | Always says up, always 80% sure. |
+| **People** | Anyone can log a call in the app, with their own name and confidence. |
 
-One namespace (`proven-v1`), three record kinds, each `PROVEN/1 {json}`:
-`CALL`, `OUTCOME`, `CALIBRATION`. Walrus Memory Seal-encrypts every blob, so a blob link shows
-the stored object but not its plaintext; Proven decrypts through the relayer with the delegate key.
+The strategies are simple published rules ([`src/lib/strategies.ts`](src/lib/strategies.ts)) that only see Tatum prices from *before* their call. Proven is not told which one is good; it has to learn it.
 
-## Tatum usage
+**What it learned** from the first 64 settled calls (four days, SUI/SOL/BTC/ETH):
 
-- **Data API** (`/v4/data/rate/symbol`): resolves price calls and records spot at logging time.
-- **Sui gRPC gateway** (`sui-mainnet-grpc.gateway.tatum.io`, native gRPC via `@grpc/grpc-js`,
-  key as `x-api-key` metadata): checkpoint reads for resolving on-chain claims. If the gateway
-  refuses the key or is unreachable, the code falls back to a public fullnode and the outcome's
-  `evidence` field says which source decided it (`tatum-sui-grpc` or `sui-fullnode-grpc`).
-  Evidence labels are never faked.
-- `GET /api/health` reports live status of Walrus, Tatum prices and Tatum Sui gRPC (never keys).
+| Source | Right | Claims on average | Verdict | Trust |
+|---|---|---|---|---|
+| Momentum 4h | 62% | 58% | Calibrated | **57%** |
+| Mean Reverter | 56% | 68% | Slightly overconfident | 14% |
+| Trend Follower | 44% | 68% | Overconfident | 14% |
+| Perma-Bull | 31% | 80% | Overconfident | 14% |
 
-Note on the seed data: the 40 seeded outcomes were resolved while the Tatum Sui gateway was still
-rejecting our key, so they carry `sui-fullnode-grpc` evidence. Everything resolved after that
-(live price calls, new checkpoint claims) is decided through Tatum and labelled accordingly.
+Sources that score worse than a coin flip share a small floor of trust rather than reaching zero, so they can earn their way back.
 
-## Honest data disclosure
+## How it uses Walrus Memory
 
-The demo journal contains **simulated forecasters** (`Sample · …`), generated from a published RNG
-seed (`src/lib/seedplan.ts`). They are not real people and no private data is used. Their claims
-about already-finalised Sui checkpoints were backfilled and then resolved from real chain data, so
-the learning loop is real but those calls were not predictions made in advance. Calls you log in the
-app are real and written before the event.
+Walrus Memory is the only store of record. There is no database and no cache.
 
-## Run it
+- Every call, outcome and trust update is an append-only record, `PROVEN/2 {json}`, in namespace `proven-v2` (`rememberAndWait` / `rememberBulkAndWait`).
+- On every page load the server counts the namespace with `listMemories`, recalls the records with `recall`, and recomputes every score from scratch ([`src/lib/memory.ts`](src/lib/memory.ts), [`src/lib/scoring.ts`](src/lib/scoring.ts)). The Proof section shows *stored* vs *recalled* so you can see nothing is missing.
+- One outcome record settles every call on the same claim, which keeps the journal compact.
+- **190 records on mainnet** so far, every blob ID listed in [EVIDENCE.md](EVIDENCE.md).
+
+## How it uses Tatum
+
+| Tatum product | Used for |
+|---|---|
+| **Data API, historical OHLCV** (`/v4/data/rate/symbol/OHLCV`) | The price at the exact deadline minute decides every outcome; strategies read 4h and 24h history. |
+| **Data API, spot rate** (`/v4/data/rate/symbol`) | The price shown when a person logs a call. |
+| **Sui gRPC gateway** (`sui-mainnet-grpc.gateway.tatum.io`, native gRPC with `x-api-key` metadata) | Anchors every outcome to the current Sui checkpoint; powers the live status check. |
+
+If Tatum's Sui gateway is unreachable, the code falls back to a public fullnode and the record says so (`checkpointSource`). Labels are never faked: the first replay batch was settled from a sandbox that could not reach native gRPC, so those 16 outcomes carry `sui-fullnode-grpc`; settlements from the live app carry `tatum-sui-grpc`.
+
+## The learning loop runs by itself
+
+[`.github/workflows/loop.yml`](.github/workflows/loop.yml) runs every hour:
+
+1. `POST /api/settle` settles every call whose deadline has passed (Tatum price at the deadline → outcome + new trust snapshots on Walrus).
+2. `POST /api/round` has every strategy make a fresh 4-hour call on each asset.
+
+Both are idempotent. The journal keeps growing and keeps learning without anyone clicking.
+
+## API
+
+| Route | |
+|---|---|
+| `GET /api/state?asset=SUI` | The journal, rebuilt from Walrus: the open question with/without memory, leaderboard, learning curve, calls with receipts. |
+| `POST /api/call` | Log a person's call (validated, written to Walrus, returns the blob ID). |
+| `POST /api/settle` | Settle due calls; returns outcomes, trust before/after and receipts. |
+| `POST /api/round` | Open a new strategy round. |
+| `GET /api/health` | Live status of Walrus, Tatum prices and Tatum Sui gRPC. Never returns keys. |
+
+## Run it yourself
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in your own mainnet account + delegate key
+cp .env.example .env.local   # your mainnet Walrus Memory account + delegate key, your Tatum key
 npm run smoke                 # remember + recall on mainnet
-npm run seed                  # writes the demo journal, prints blob IDs -> data/receipts.json
+npm run seed                  # replay the last 4 days from Tatum prices and open a live round
 npm run dev
+npm test                      # scoring, strategies, codec
+npm run evidence              # regenerate EVIDENCE.md from the Walrus index
 ```
 
-Account and delegate key: create them at <https://memory.walrus.xyz> (mainnet). Use a delegate key,
-never your wallet key. `.env.local` is git-ignored.
+Create the account and delegate key at <https://memory.walrus.xyz> (mainnet). Use a delegate key, never a wallet key.
 
-Environment: `MEMWAL_PRIVATE_KEY`, `MEMWAL_ACCOUNT_ID`, `NEXT_PUBLIC_MEMWAL_ACCOUNT_ID`,
-`TATUM_API_KEY`; optional `MEMWAL_SERVER_URL`, `MEMWAL_NAMESPACE`, `TATUM_SUI_GRPC_URL`.
-
-## Layout
+## Project layout
 
 ```
-src/lib/scoring.ts   calibration + ranking (pure, tested)
-src/lib/memory.ts    Walrus Memory writes, bulk writes, full reload
-src/lib/chain.ts     Sui checkpoint reads over gRPC (Tatum first)
-src/lib/tatum.ts     Tatum Data API prices
-src/lib/resolve.ts   resolves claims from real data
-src/app/             the single screen + /api/{state,call,resolve}
-scripts/             smoke, seed, account diagnostics
-data/receipts.json   blob IDs written by the seed (a receipt, not the source of truth)
+src/lib/strategies.ts  rule-based forecasters (inputs: Tatum prices before the call)
+src/lib/tatum.ts       Tatum prices: spot + exact-minute historical candles
+src/lib/chain.ts       Sui checkpoints over native gRPC (Tatum first, labelled fallback)
+src/lib/memory.ts      Walrus Memory writes and the full rebuild
+src/lib/resolve.ts     decide a claim from the price at its deadline
+src/lib/settle.ts      settle everything due, write outcomes + trust snapshots
+src/lib/scoring.ts     Brier score, trust weights, memory off vs on (pure, tested)
+src/app/               the app and API routes
+scripts/               smoke test, seed (replay), evidence, account check
 ```
+
+## Honest limits
+
+- Strategy calls in the first four days were **replayed**: each was computed from prices before its call time and settled by the real price afterwards, but they were written to memory after the fact. Every call made since the live round opened was written before its deadline.
+- Records are encrypted by Walrus Memory. A blob link proves a record exists and when it was written; reading its contents needs the account's key.
+- Four days is a small sample. The trust numbers will move as the hourly loop adds results; that is the point.
