@@ -91,11 +91,8 @@ Both are idempotent. The journal keeps growing and keeps learning without anyone
 ```bash
 npm install
 cp .env.example .env.local   # your mainnet Walrus Memory account + delegate key, your Tatum key
-npm run smoke                 # remember + recall on mainnet
-npm run seed                  # replay the last 4 days from Tatum prices and open a live round
 npm run dev
 npm test                      # scoring, strategies, codec
-npm run evidence              # regenerate EVIDENCE.md from the Walrus index
 ```
 
 Create the account and delegate key at <https://memory.walrus.xyz> (mainnet). Use a delegate key, never a wallet key.
@@ -111,7 +108,6 @@ src/lib/resolve.ts     decide a claim from the price at its deadline
 src/lib/settle.ts      settle everything due, write outcomes + trust snapshots
 src/lib/scoring.ts     Brier score, trust weights, memory off vs on (pure, tested)
 src/app/               the app and API routes
-scripts/               smoke test, seed (replay), evidence
 ```
 
 ## Honest limits
