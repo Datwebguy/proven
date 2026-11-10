@@ -152,7 +152,7 @@ export default function Home() {
         <div className="topbar-in">
           <Wordmark />
           <nav className="nav">
-            <a href="#ask">Ask</a><a href="#call">Make a call</a><a href="#leaderboard">Leaderboard</a><a href="#journal">Journal</a><a href="#proof">Proof</a>
+            <a href="#ask">Ask</a><a href="#try">Try it</a><a href="#call">Make a call</a><a href="#leaderboard">Leaderboard</a><a href="#journal">Journal</a><a href="#how">How it works</a><a href="#proof">Proof</a>
           </nav>
           <div className="grow" />
           <span className="pill"><span className={"dot " + status.cls} /><span>{status.text}</span></span>
@@ -174,6 +174,16 @@ export default function Home() {
           </div>
         </div>
 
+        <section id="try" className="reveal">
+          <div className="head"><div><h2>Try it in 15 minutes</h2><p>Put your own name on the board. Every step below writes to Sui mainnet and is checked with real prices.</p></div></div>
+          <div className="tryflow">
+            <a className="trystep" href="#call"><span className="k">1</span><b>Make a call</b><span>Pick an asset, a price and how sure you are. Choose "In 15 minutes".</span></a>
+            <div className="trystep"><span className="k">2</span><b>Get your receipt</b><span>Your call is saved before the deadline. The receipt link proves it was never changed.</span></div>
+            <a className="trystep" href="#call"><span className="k">3</span><b>Check the result</b><span>After the deadline, press "Check results". The real price at that minute decides it.</span></a>
+            <a className="trystep" href="#leaderboard"><span className="k">4</span><b>See your trust</b><span>You appear on the leaderboard. Ask again, and your record now counts.</span></a>
+          </div>
+        </section>
+
         <section id="ask" className="reveal">
           <div className="head">
             <div><h2>Ask: who should I trust right now?</h2><p>The same open question, answered twice. On the left, everyone counts the same. On the right, Proven uses what it remembers.</p></div>
@@ -187,7 +197,7 @@ export default function Home() {
             {j && !q && <div className="empty">No open calls on {asset} right now. Make one below, and the answer appears here.</div>}
             {q && (
               <>
-                <div className="q">Will {q.claim} by {when(q.deadline)}?</div>
+                <div className="q">Will {q.claim.replace(/^(\S+) /, "$1 be ")} by {when(q.deadline)}?</div>
                 <div className="q-sub">{q.rows.length} sources have an open call on this. {timeLeft(q.deadline) ? `Decided in ${timeLeft(q.deadline)}.` : "Ready to be decided."}</div>
                 <div className="compare">
                   <div className="side">
@@ -252,7 +262,7 @@ export default function Home() {
                 <div className="field"><label htmlFor="f-dir">Will be</label><select id="f-dir" name="direction"><option value="above">Above</option><option value="below">Below</option></select></div>
                 <div className="field w2"><label htmlFor="f-usd">Price in USD</label><input id="f-usd" name="usd" type="number" step="any" min="0" required inputMode="decimal" placeholder="Target price" /></div>
                 <div className="field w2"><label htmlFor="f-h">Deadline</label>
-                  <select id="f-h" name="hours" defaultValue="4"><option value="1">In 1 hour</option><option value="4">In 4 hours</option><option value="24">In 1 day</option><option value="168">In 1 week</option></select>
+                  <select id="f-h" name="hours" defaultValue="0.25"><option value="0.25">In 15 minutes</option><option value="1">In 1 hour</option><option value="4">In 4 hours</option><option value="24">In 1 day</option><option value="168">In 1 week</option></select>
                 </div>
                 <div className="field w4"><label htmlFor="f-conf">How sure are you?</label>
                   <div className="range"><input id="f-conf" name="confidence" type="range" min={1} max={99} value={conf} onChange={(e) => setConf(Number(e.target.value))} /><output className="tnum">{conf}%</output></div>
@@ -324,6 +334,16 @@ export default function Home() {
             </table>
             {j && !resolved.length && <div className="empty">No settled calls yet.</div>}
             {resolved.length > 10 && <div style={{ marginTop: 14 }}><button className="btn ghost sm" onClick={() => setAllRows(!allRows)}>{allRows ? "Show fewer" : `Show all ${resolved.length}`}</button></div>}
+          </div>
+        </section>
+
+        <section id="how" className="reveal">
+          <div className="head"><div><h2>How Proven decides</h2><p>No hidden settings. Every number on this page comes from these rules, applied to what is in memory.</p></div></div>
+          <div className="howgrid">
+            <div className="card"><b>1 · Score each call</b><p>Brier score: (confidence − outcome)². Saying 90% and being right costs 0.01. Saying 90% and being wrong costs 0.81. Being honest about doubt is rewarded.</p></div>
+            <div className="card"><b>2 · Be careful with little evidence</b><p>Every source starts as if it had 3 coin-flip calls. One lucky call can't put anyone on top; a long record can.</p></div>
+            <div className="card"><b>3 · Trust = skill over a coin flip</b><p>Trust is how much better than a coin flip (0.25) a source scores, shared out across sources. Worse than a coin flip keeps a small floor, so anyone can earn their way back.</p></div>
+            <div className="card"><b>4 · Correct the claim</b><p>A source saying 80% that is right 60% of the time is read closer to 60%. The more results it has, the more its record outweighs its words.</p></div>
           </div>
         </section>
 
