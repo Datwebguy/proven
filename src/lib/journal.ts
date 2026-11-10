@@ -38,6 +38,7 @@ export async function buildJournal(asset: string) {
         confidence: call.confidence,
         deadline: call.deadline,
         loggedAt: call.loggedAt,
+        link: call.link ?? null,
         receipt: blobOfCall.get(call.id) ?? null,
         outcome: outcome
           ? { result: outcome.result, observedUsd: outcome.observedUsd, checkpoint: outcome.checkpoint ?? null, receipt: blobOfOutcome.get(call.id) ?? null }

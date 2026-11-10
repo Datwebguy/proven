@@ -66,7 +66,40 @@ export function sourceStats(joined: Joined[]): SourceStats[] {
   return raw.map(({ postBrier: _p, ...r }, i) => ({ ...r, weight: skill[i] / total }));
 }
 
-export type Opinion = { source: string; callId: string; stated: number; adjusted: number; weight: number };
+/**
+ * "How confident should I be?" Blend a stated confidence with how often this source is actually right.
+ * With no history the stated number stands; the more results, the more the record outweighs the words.
+ * Returns the corrected probability that the claim is true.
+ */
+export function adjustConfidence(record: { resolved: number; hitRate: number }, statedPct: number): number {
+  const stated = statedPct / 100;
+  const side = Math.max(stated, 1 - stated);
+  const n = record.resolved;
+  const blended = Math.min(0.99, Math.max(0.5, (n * record.hitRate + K * side) / (n + K)));
+  return stated >= 0.5 ? blended : 1 - blended;
+}
+
+/** When a source says roughly X% sure, how often is it right? Buckets by stated confidence in the chosen side. */
+export function reliability(calls: { confidence: number; result: boolean }[]) {
+  const buckets = [
+    { lo: 50, hi: 60, label: "50–59%" },
+    { lo: 60, hi: 70, label: "60–69%" },
+    { lo: 70, hi: 80, label: "70–79%" },
+    { lo: 80, hi: 90, label: "80–89%" },
+    { lo: 90, hi: 101, label: "90–99%" },
+  ].map((b) => ({ ...b, n: 0, hits: 0, claimed: 0 }));
+  for (const c of calls) {
+    const side = Math.max(c.confidence, 100 - c.confidence);
+    const b = buckets.find((x) => side >= x.lo && side < x.hi);
+    if (!b) continue;
+    b.n++;
+    b.claimed += side / 100;
+    if ((c.confidence >= 50) === c.result) b.hits++;
+  }
+  return buckets.filter((b) => b.n).map((b) => ({ label: b.label, n: b.n, claimed: b.claimed / b.n, actual: b.hits / b.n }));
+}
+
+export type Opinion ={ source: string; callId: string; stated: number; adjusted: number; weight: number };
 
 /**
  * Answer "how likely is this asset's open claim, and whom should I trust?" two ways.
@@ -88,11 +121,7 @@ export function guidance(joined: Joined[], asset: string) {
 
   const rows: Opinion[] = focus.map(({ call }) => {
     const st = stats.find((s) => s.source === call.source)!;
-    const stated = call.confidence / 100;
-    const side = Math.max(stated, 1 - stated);
-    const n = st.resolved;
-    const blended = Math.min(0.99, Math.max(0.5, (n * st.hitRate + K * side) / (n + K)));
-    return { source: call.source, callId: call.id, stated, adjusted: stated >= 0.5 ? blended : 1 - blended, weight: st.weight };
+    return { source: call.source, callId: call.id, stated: call.confidence / 100, adjusted: adjustConfidence(st, call.confidence), weight: st.weight };
   });
 
   const off = rows.length ? rows.reduce((s, r) => s + r.stated, 0) / rows.length : 0.5;
