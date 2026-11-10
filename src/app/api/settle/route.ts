@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { settleDue } from "@/lib/settle";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 /** Resolve every call whose deadline has passed. Idempotent: settled calls are skipped. */
 export async function POST() {
   try {
     const r = await settleDue(4);
+    if (r.settled) revalidateTag("journal");
     const trust = (list: typeof r.afterStats) => Object.fromEntries(list.map((s) => [s.source, s.weight]));
     return NextResponse.json({
       settled: r.settled,
