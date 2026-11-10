@@ -24,9 +24,9 @@ Proven keeps an honest record and uses it to answer two questions:
 ## Try it in 2 minutes (no sign-in, nothing to install)
 
 1. Open **https://proven-ten.vercel.app** and pick SUI, SOL, BTC or ETH under **Ask**. The same open question is answered twice, *without memory* and *with memory*, and you can see the ranking change.
-2. Under **Make a call**, type a name, pick an asset and a price, leave **In 15 minutes**, and move the confidence slider. Proven tells you live how much that confidence is worth from the record. Save it, and you get a Walrus receipt within about 20 seconds.
+2. Under **Make a call**, type a name, pick an asset and a price, leave **In 5 minutes**, and move the confidence slider. Proven tells you live how much that confidence is worth from the record. Save it, and you get a Walrus receipt within about 20 seconds.
 3. Choose **Someone I follow** and paste a link to a post on X. Proven reads the public post and fills in the handle, link and call for you.
-4. After 15 minutes, press **Check results**. Tatum's price at that exact minute decides the call, the result is written to Walrus, and trust updates. If nobody presses it, the hourly loop settles it anyway.
+4. After 5 minutes, press **Check results**. Tatum's price at that exact minute decides the call, the result is written to Walrus, and trust updates. If nobody presses it, the hourly loop settles it anyway.
 5. Click any name to open their **record**: a Proven score from 0 to 100, a "when they say 80%, they're right X%" chart, every call with its receipt, a Follow button, an RSS feed and a shareable link with a preview card.
 
 ## What it has learned so far
