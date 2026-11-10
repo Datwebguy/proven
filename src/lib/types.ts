@@ -17,6 +17,7 @@ export type CallRecord = {
   deadline: string;                     // ISO
   loggedAt: string;                     // ISO
   note?: string;
+  link?: string;                        // where a followed source made the call (e.g. a post URL)
 };
 
 export type OutcomeRecord = {

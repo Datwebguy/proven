@@ -180,3 +180,26 @@ a.trystep:hover { transform: translateY(-2px); border-color: var(--brand-2); tex
 .howgrid .card p { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
 @media (max-width: 900px) { .tryflow { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .tryflow, .howgrid { grid-template-columns: 1fr; } }
+
+/* How confident should I be? */
+.advice { grid-column: 1 / -1; font-size: 14px; color: var(--ink-2); padding: 12px 14px; border-radius: 12px; background: var(--soft); border: 1px solid var(--line); transition: background .3s, border-color .3s; }
+.advice b { color: var(--ink); }
+.advice.warn { background: var(--warn-soft); border-color: #fde68a; } .advice.good { background: var(--good-soft); border-color: #bbf7d0; }
+
+/* Source names open their record */
+.linkbtn { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: var(--ink); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.linkbtn:hover { color: var(--brand); text-decoration-color: currentColor; }
+
+/* Record drawer */
+.drawer-bg { position: fixed; inset: 0; z-index: 50; background: rgba(13,20,36,.32); display: flex; justify-content: flex-end; animation: fade .2s var(--ease); }
+.drawer { width: min(520px, 100%); height: 100%; overflow-y: auto; background: var(--bg); padding: 22px; box-shadow: -20px 0 50px -20px rgba(13,20,36,.35); animation: slide .35s var(--ease); }
+.drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+.drawer h3 { margin: 2px 0 0; font-size: 24px; letter-spacing: -0.02em; }
+.drawer h4 { margin: 22px 0 10px; font-size: 15px; }
+.rel { display: grid; gap: 10px; }
+.relrow { display: grid; grid-template-columns: 64px 1fr auto; gap: 10px; align-items: center; }
+.relbars { display: grid; gap: 4px; } .relbars .track { margin-top: 0; }
+.relbars .track > i { background: linear-gradient(90deg, var(--brand), var(--brand-2)); }
+@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slide { from { transform: translateX(40px); opacity: 0 } to { transform: none; opacity: 1 } }
+@media (max-width: 560px) { .drawer { padding: 16px; } .drawer .stats { grid-template-columns: repeat(3, 1fr) !important; } .drawer .stat b { font-size: 20px; } }

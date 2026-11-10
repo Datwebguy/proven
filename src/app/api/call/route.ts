@@ -19,6 +19,8 @@ export async function POST(req: Request) {
   const confidence = Math.round(Number(b.confidence));
   const hours = Number(b.hours);
   const source = String(b.source ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+  const rawLink = String(b.link ?? "").trim();
+  const link = /^https?:\/\/\S{3,300}$/i.test(rawLink) ? rawLink : "";
 
   const problems = [
     !(ASSETS as readonly string[]).includes(asset) && "Pick an asset.",
@@ -27,6 +29,7 @@ export async function POST(req: Request) {
     !(hours >= 0.25 && hours <= 720) && "Deadline must be between 15 minutes and 30 days.",
     !source && "Enter a name.",
     strategyByName(source) && "That name belongs to a built-in strategy.",
+    rawLink && !link && "The link must start with http:// or https://.",
   ].filter(Boolean);
   if (problems.length) return NextResponse.json({ error: problems[0] }, { status: 400 });
 
@@ -44,6 +47,7 @@ export async function POST(req: Request) {
       deadline: new Date(now.getTime() + hours * 3600_000).toISOString(),
       loggedAt: now.toISOString(),
       note: `price when logged $${price.usd}`,
+      ...(link ? { link } : {}),
     };
     const blobId = await write(call);
     return NextResponse.json({ call, blobId });

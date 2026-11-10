@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Journal } from "@/lib/journal";
+import { adjustConfidence, reliability } from "@/lib/scoring";
 import { Logo, Wordmark } from "./Logo";
 
 const ASSETS = ["SUI", "SOL", "BTC", "ETH"];
@@ -62,6 +63,9 @@ export default function Home() {
   const [health, setHealth] = useState<Health | null>(null);
   const [allRows, setAllRows] = useState(false);
   const [conf, setConf] = useState(70);
+  const [whose, setWhose] = useState<"me" | "follow">("me");
+  const [name, setName] = useState("");
+  const [profile, setProfile] = useState<string | null>(null);
   const [, tick] = useState(0);
   useReveal();
 
@@ -104,6 +108,7 @@ export default function Home() {
         <>
           <div><b>Call saved.</b> {d.call.source} says {d.call.asset} will be {d.call.check.type === "price_above" ? "above" : "below"} {usd(d.call.check.usd)} by {when(d.call.deadline)}, with {d.call.confidence}% confidence.</div>
           <div className="chain"><span className="muted">Receipt</span><a className="rc" href={blobUrl(d.blobId)} target="_blank" rel="noreferrer">{d.blobId}</a></div>
+          <div><button className="btn ghost sm" onClick={() => setProfile(d.call.source)}>See {d.call.source}&apos;s record</button></div>
         </>
       ),
     });
@@ -162,10 +167,10 @@ export default function Home() {
       <main>
         <div className="hero">
           <div>
-            <span className="eyebrow">Prediction journal · remembers on Sui</span>
+            <span className="eyebrow">A calibrated prediction journal</span>
             <h1>Know who is <em>actually</em> right.</h1>
-            <p className="lead">Everyone sounds sure. Proven keeps score. It records every call before the event, checks it against real prices after, and remembers who was right and how confident they claimed to be. Next time you ask, the answer reflects the record.</p>
-            <div className="cta"><a className="btn" href="#ask">See the answer</a><a className="btn ghost" href="#call">Make a call</a></div>
+            <p className="lead">For anyone who makes calls, or follows people who do. Proven records every call before the event, checks it against real prices after, and remembers who was right and how sure they claimed to be. Then it answers two questions with that memory: <b>who should I trust on this?</b> and <b>how confident should I be?</b></p>
+            <div className="cta"><a className="btn" href="#ask">Who should I trust?</a><a className="btn ghost" href="#call">How confident should I be?</a></div>
           </div>
           <div className="steps">
             <div className="step"><span className="k">1</span><div><b>Call it before it happens</b><span>A claim plus a confidence, saved permanently. No editing later.</span></div></div>
@@ -255,20 +260,32 @@ export default function Home() {
         <section id="call" className="reveal">
           <div className="split">
             <div className="card">
-              <div className="head" style={{ marginBottom: 12 }}><div><h2>Make a call</h2><p>Your call is saved before the deadline and checked against the real price after it.</p></div></div>
+              <div className="head" style={{ marginBottom: 12 }}><div><h2>Make a call</h2><p>Log your own call, or one from someone you follow. It is saved before the deadline and checked against the real price after it.</p></div></div>
               <form className="form" onSubmit={submitCall}>
-                <div className="field w2"><label htmlFor="f-src">Name</label><input id="f-src" name="source" required maxLength={40} placeholder="Your name" /></div>
+                <div className="field w4">
+                  <label>Whose call is this?</label>
+                  <div className="tabs" role="tablist" style={{ width: "fit-content" }}>
+                    <button type="button" role="tab" className="tab" aria-selected={whose === "me"} onClick={() => setWhose("me")}>Mine</button>
+                    <button type="button" role="tab" className="tab" aria-selected={whose === "follow"} onClick={() => setWhose("follow")}>Someone I follow</button>
+                  </div>
+                </div>
+                <div className={"field " + (whose === "follow" ? "w2" : "w4")}>
+                  <label htmlFor="f-src">{whose === "me" ? "Your name" : "Their name or handle"}</label>
+                  <input id="f-src" name="source" required maxLength={40} placeholder={whose === "me" ? "e.g. Ada" : "e.g. @analyst"} value={name} onChange={(e) => setName(e.target.value)} list="known-sources" autoComplete="off" />
+                  <datalist id="known-sources">{(j?.sources ?? []).filter((s) => s.origin === "person").map((s) => <option key={s.source} value={s.source} />)}</datalist>
+                </div>
+                {whose === "follow" && <div className="field w2"><label htmlFor="f-link">Where they said it (optional)</label><input id="f-link" name="link" type="url" placeholder="https://…" /></div>}
                 <div className="field"><label htmlFor="f-asset">Asset</label><select id="f-asset" name="asset" defaultValue={asset}>{ASSETS.map((a) => <option key={a}>{a}</option>)}</select></div>
                 <div className="field"><label htmlFor="f-dir">Will be</label><select id="f-dir" name="direction"><option value="above">Above</option><option value="below">Below</option></select></div>
                 <div className="field w2"><label htmlFor="f-usd">Price in USD</label><input id="f-usd" name="usd" type="number" step="any" min="0" required inputMode="decimal" placeholder="Target price" /></div>
                 <div className="field w2"><label htmlFor="f-h">Deadline</label>
                   <select id="f-h" name="hours" defaultValue="0.25"><option value="0.25">In 15 minutes</option><option value="1">In 1 hour</option><option value="4">In 4 hours</option><option value="24">In 1 day</option><option value="168">In 1 week</option></select>
                 </div>
-                <div className="field w4"><label htmlFor="f-conf">How sure are you?</label>
+                <div className="field w4"><label htmlFor="f-conf">{whose === "me" ? "How sure are you?" : "How sure are they?"}</label>
                   <div className="range"><input id="f-conf" name="confidence" type="range" min={1} max={99} value={conf} onChange={(e) => setConf(Number(e.target.value))} /><output className="tnum">{conf}%</output></div>
                 </div>
-                <div className="help">Proven scores honesty as much as being right. Saying 95% and missing costs more than saying 60% and missing.</div>
-                <div><button className="btn" disabled={!!busy}>{busy === "call" ? <><span className="spin" />Saving…</> : "Save my call"}</button></div>
+                <Advice name={name.trim()} conf={conf} whose={whose} j={j} />
+                <div><button className="btn" disabled={!!busy}>{busy === "call" ? <><span className="spin" />Saving…</> : "Save call"}</button></div>
               </form>
             </div>
 
@@ -280,7 +297,7 @@ export default function Home() {
               <div className="list">
                 {open.slice(0, 8).map((c) => (
                   <div className="li" key={c.id}>
-                    <div><div className="t">{c.source} <Kind origin={c.origin} /></div><div className="s">{c.claim} · {c.confidence}% sure</div></div>
+                    <div><div className="t"><button className="linkbtn" onClick={() => setProfile(c.source)}>{c.source}</button> <Kind origin={c.origin} /></div><div className="s">{c.claim} · {c.confidence}% sure</div></div>
                     <span className={"badge " + (timeLeft(c.deadline) ? "" : "good")}>{timeLeft(c.deadline) ?? "Ready"}</span>
                   </div>
                 ))}
@@ -296,11 +313,11 @@ export default function Home() {
           <div className="board">
             {(j?.sources ?? []).map((s, i) => {
               const gap = s.avgConfidence - s.hitRate;
-              const v = s.resolved < 3 ? ["", "New"] : gap > 0.12 ? ["bad", "Overconfident"] : gap < -0.12 ? ["warn", "Too modest"] : ["good", "Calibrated"];
+              const v = s.resolved < 3 ? ["", "New"] : gap > 0.08 ? ["bad", "Overconfident"] : gap < -0.08 ? ["warn", "Too modest"] : ["good", "Calibrated"];
               return (
                 <div className="lb" key={s.source}>
                   <span className="pos">{i + 1}</span>
-                  <div><div className="nm">{s.source} <Kind origin={s.origin} /> <span className={"badge " + v[0]}>{v[1]}</span></div>{s.rule && <div className="rule">{s.rule}</div>}</div>
+                  <div><div className="nm"><button className="linkbtn" onClick={() => setProfile(s.source)}>{s.source}</button> <Kind origin={s.origin} /> <span className={"badge " + v[0]}>{v[1]}</span></div>{s.rule && <div className="rule">{s.rule}</div>}</div>
                   <div className="facts">{s.resolved ? <>Right {pct(s.hitRate)} of the time<br />Claims {pct(s.avgConfidence)} on average</> : "No results yet"}</div>
                   <div className="trust"><b className="tnum">{pct(s.weight)}</b><span>trust</span></div>
                 </div>
@@ -318,7 +335,7 @@ export default function Home() {
               <tbody>
                 {(allRows ? resolved : resolved.slice(0, 10)).map((c) => (
                   <tr key={c.id}>
-                    <td><b>{c.source}</b></td>
+                    <td><button className="linkbtn" onClick={() => setProfile(c.source)}>{c.source}</button></td>
                     <td>{c.claim}<div className="muted">{when(c.deadline)}</div></td>
                     <td className="tnum">{c.confidence}%</td>
                     <td><span className={"badge " + (c.outcome!.result ? "good" : "bad")}>{c.outcome!.result ? "Came true" : "Missed"}</span><div className="muted">closed at {usd(c.outcome!.observedUsd)}</div></td>
@@ -365,12 +382,94 @@ export default function Home() {
           </p>
         </section>
 
+        {profile && j && <Profile source={profile} j={j} onClose={() => setProfile(null)} />}
+
         <footer>
           <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><Logo size={18} /> Proven</span>
           <span>Memory by Walrus · Data by Tatum · <a href="https://github.com/datwebguy/proven" target="_blank" rel="noreferrer">Source</a></span>
         </footer>
       </main>
     </>
+  );
+}
+
+/** "How confident should I be?": reads the stated confidence against this source's remembered record. */
+function Advice({ name, conf, whose, j }: { name: string; conf: number; whose: "me" | "follow"; j: Journal | null }) {
+  const st = j?.sources.find((s) => s.source.toLowerCase() === name.toLowerCase());
+  const you = whose === "me";
+  if (!name) return <div className="advice">Enter a name and Proven will tell you what {you ? "your" : "their"} confidence is really worth, based on the record.</div>;
+  if (!st || st.resolved === 0)
+    return <div className="advice"><b>No record yet for {name}.</b> Saying {conf}% will be taken at face value until results come in. After a few, Proven will show how much {you ? "your" : "their"} confidence is really worth.</div>;
+  const adj = Math.round(adjustConfidence(st, conf) * 100);
+  const diff = adj - conf;
+  return (
+    <div className={"advice " + (Math.abs(diff) >= 5 ? (diff < 0 ? "warn" : "good") : "")}>
+      <b>How confident should {you ? "you" : "you be in them"} be? {adj}%.</b>{" "}
+      {name} {you ? "have" : "has"} been right {pct(st.hitRate)} of the time across {st.resolved} result{st.resolved === 1 ? "" : "s"}, while claiming {pct(st.avgConfidence)} on average.{" "}
+      {Math.abs(diff) < 5 ? "This call is in line with the record." : diff < 0 ? `So ${conf}% is likely too high.` : `So ${conf}% is likely too modest.`}
+    </div>
+  );
+}
+
+/** A source's record: accuracy vs claimed confidence, a reliability table, and every call with its receipt. */
+function Profile({ source, j, onClose }: { source: string; j: Journal; onClose: () => void }) {
+  const st = j.sources.find((s) => s.source === source);
+  const calls = j.calls.filter((c) => c.source === source);
+  const done = calls.filter((c) => c.outcome);
+  const rel = reliability(done.map((c) => ({ confidence: c.confidence, result: c.outcome!.result })));
+  const rank = j.sources.findIndex((s) => s.source === source) + 1;
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return (
+    <div className="drawer-bg" onClick={onClose}>
+      <aside className="drawer" role="dialog" aria-label={`${source}'s record`} onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head">
+          <div><div className="muted">Record</div><h3>{source}</h3></div>
+          <button className="btn ghost sm" onClick={onClose} aria-label="Close">Close</button>
+        </div>
+        {st?.rule && <p className="muted" style={{ marginTop: 0 }}>{st.rule}</p>}
+        <div className="stats" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+          <div className="stat"><b className="tnum">{st ? pct(st.weight) : "—"}</b><span>trust · #{rank}</span></div>
+          <div className="stat"><b className="tnum">{st?.resolved ? pct(st.hitRate) : "—"}</b><span>right</span></div>
+          <div className="stat"><b className="tnum">{st?.resolved ? pct(st.avgConfidence) : "—"}</b><span>claimed</span></div>
+        </div>
+        <h4>When {source} says…</h4>
+        {rel.length ? (
+          <div className="rel">
+            {rel.map((b) => (
+              <div className="relrow" key={b.label}>
+                <span className="muted">{b.label}</span>
+                <div className="relbars">
+                  <div className="track"><i style={{ width: `${b.claimed * 100}%`, background: "#94a3b8" }} /></div>
+                  <div className="track"><i style={{ width: `${b.actual * 100}%` }} /></div>
+                </div>
+                <span className="tnum" style={{ fontSize: 13 }}>right {pct(b.actual)} <span className="muted">of {b.n}</span></span>
+              </div>
+            ))}
+            <div className="legend"><span><i style={{ background: "#94a3b8" }} />claimed</span><span><i style={{ background: "#0f766e" }} />actually right</span></div>
+          </div>
+        ) : <p className="empty">No settled calls yet.</p>}
+        <h4>Calls</h4>
+        <div className="list">
+          {calls.slice(0, 30).map((c) => (
+            <div className="li" key={c.id}>
+              <div>
+                <div className="t">{c.claim} · {c.confidence}%</div>
+                <div className="s">
+                  {when(c.deadline)}
+                  {c.receipt && <> · <a href={blobUrl(c.receipt)} target="_blank" rel="noreferrer">receipt</a></>}
+                  {c.link && <> · <a href={c.link} target="_blank" rel="noreferrer nofollow">source</a></>}
+                </div>
+              </div>
+              {c.outcome ? <span className={"badge " + (c.outcome.result === (c.confidence >= 50) ? "good" : "bad")}>{c.outcome.result === (c.confidence >= 50) ? "Right" : "Wrong"}</span> : <span className="badge">{timeLeft(c.deadline) ?? "Ready"}</span>}
+            </div>
+          ))}
+        </div>
+      </aside>
+    </div>
   );
 }
 
