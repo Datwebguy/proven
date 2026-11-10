@@ -171,3 +171,12 @@ footer { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--line);
 }
 .btn { white-space: nowrap; }
 .scroll table { min-width: 680px; }
+.tryflow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.trystep { display: grid; gap: 6px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); color: var(--ink); transition: transform .2s var(--ease), border-color .2s; }
+a.trystep:hover { transform: translateY(-2px); border-color: var(--brand-2); text-decoration: none; }
+.trystep .k { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; font-weight: 700; color: var(--brand); background: var(--brand-soft); }
+.trystep span:not(.k) { color: var(--ink-2); font-size: 14px; }
+.howgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.howgrid .card p { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
+@media (max-width: 900px) { .tryflow { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .tryflow, .howgrid { grid-template-columns: 1fr; } }
