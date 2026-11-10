@@ -52,7 +52,7 @@ Sources that score worse than a coin flip share a small floor of trust rather th
 Walrus Memory is the only store of record. There is no database and no cache.
 
 - Every call, outcome and trust update is an append-only record. Each write (one call, a whole strategy round, or a settlement's outcomes and trust snapshots) is **one Walrus memory** holding a bundle of records, `PROVEN/3 {"records":[…]}`, in namespace `proven-v3`. Bundling keeps the journal to a handful of memories, so a full rebuild is one recall of a few seconds.
-- Records carried over from the earlier one-record-per-memory namespace (`proven-v2`) keep a `receipt` pointing at the blob where they were first written, so "saved before the deadline" stays provable ([`scripts/migrate-v3.ts`](scripts/migrate-v3.ts)).
+- Records carried over from the earlier one-record-per-memory namespace (`proven-v2`) keep a `receipt` pointing at the blob where they were first written, so "saved before the deadline" stays provable.
 - On every page load the server counts the namespace with `listMemories`, recalls the records with `recall`, and recomputes every score from scratch ([`src/lib/memory.ts`](src/lib/memory.ts), [`src/lib/scoring.ts`](src/lib/scoring.ts)). The Proof section shows *stored* vs *recalled* so you can see nothing is missing.
 - One outcome record settles every call on the same claim, which keeps the journal compact.
 - Every memory on mainnet is listed with its blob ID in [EVIDENCE.md](EVIDENCE.md).
@@ -111,7 +111,7 @@ src/lib/resolve.ts     decide a claim from the price at its deadline
 src/lib/settle.ts      settle everything due, write outcomes + trust snapshots
 src/lib/scoring.ts     Brier score, trust weights, memory off vs on (pure, tested)
 src/app/               the app and API routes
-scripts/               smoke test, seed (replay), evidence, account check
+scripts/               smoke test, seed (replay), evidence
 ```
 
 ## Honest limits
