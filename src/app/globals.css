@@ -203,3 +203,10 @@ a.trystep:hover { transform: translateY(-2px); border-color: var(--brand-2); tex
 @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
 @keyframes slide { from { transform: translateX(40px); opacity: 0 } to { transform: none; opacity: 1 } }
 @media (max-width: 560px) { .drawer { padding: 16px; } .drawer .stats { grid-template-columns: repeat(3, 1fr) !important; } .drawer .stat b { font-size: 20px; } }
+
+/* Proven score */
+.scorecard { display: grid; grid-template-columns: auto 1fr; gap: 24px; align-items: center; margin-top: 18px; padding: 22px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow); }
+.score-ring { --p: 50; width: 132px; height: 132px; border-radius: 50%; display: grid; place-items: center; align-content: center; background: radial-gradient(closest-side, var(--surface) 78%, transparent 79% 100%), conic-gradient(var(--brand-2) calc(var(--p) * 1%), var(--soft) 0); }
+.score-ring b { font-size: 40px; letter-spacing: -0.03em; line-height: 1; } .score-ring span { font-size: 12px; color: var(--ink-3); }
+.score-label { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; color: var(--brand); }
+@media (max-width: 560px) { .scorecard { grid-template-columns: 1fr; justify-items: start; } }

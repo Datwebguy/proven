@@ -94,3 +94,12 @@ describe("codec", () => {
     expect(decode("PROVEN/1 {}")).toBeNull();
   });
 });
+
+import { provenScore } from "../src/lib/scoring";
+describe("proven score", () => {
+  it("is 50 for a coin flip, higher for good records, capped by small samples", () => {
+    expect(provenScore({ resolved: 0, brier: 0 })).toBe(50);
+    expect(provenScore({ resolved: 20, brier: 0.1 })).toBeGreaterThan(provenScore({ resolved: 20, brier: 0.3 }));
+    expect(provenScore({ resolved: 1, brier: 0 })).toBeLessThan(provenScore({ resolved: 30, brier: 0 }));
+  });
+});

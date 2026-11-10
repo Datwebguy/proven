@@ -99,7 +99,26 @@ export function reliability(calls: { confidence: number; result: boolean }[]) {
   return buckets.filter((b) => b.n).map((b) => ({ label: b.label, n: b.n, claimed: b.claimed / b.n, actual: b.hits / b.n }));
 }
 
-export type Opinion ={ source: string; callId: string; stated: number; adjusted: number; weight: number };
+/**
+ * Proven score, 0-100: one number per source, like a credit score.
+ * 50 = coin-flip quality. It uses the same small-sample caution as trust (K coin-flip calls up front),
+ * so a short lucky streak cannot reach the top. 100 would be always right and always sure.
+ */
+export function provenScore(s: { resolved: number; brier: number }): number {
+  const post = (s.resolved * s.brier + K * COIN_BRIER) / (s.resolved + K);
+  return Math.round(Math.max(0, Math.min(100, 100 * (1 - 2 * post))));
+}
+
+export function scoreLabel(score: number, resolved: number): string {
+  if (resolved < 3) return "Building a record";
+  if (score >= 65) return "Strong";
+  if (score >= 55) return "Good";
+  if (score >= 51) return "Slight edge";
+  if (score >= 45) return "Coin flip";
+  return "Poor";
+}
+
+export type Opinion = { source: string; callId: string; stated: number; adjusted: number; weight: number };
 
 /**
  * Answer "how likely is this asset's open claim, and whom should I trust?" two ways.
