@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export async function POST() {
   try {
-    const { records } = await loadAll();
+    const { records } = await loadAll({ fresh: true });
     const open = join(records.map((r) => r.record)).filter((j) => !j.outcome && j.call.origin === "strategy");
     const busy = new Set(open.map((j) => j.call.asset));
     const assets = ASSETS.filter((a) => !busy.has(a));
